@@ -55,6 +55,7 @@ console.log(`[Vercel Build] Configuring /api/* rewrite -> ${backendOrigin}/api/*
 const vercelConfig = {
   $schema: 'https://openapi.vercel.sh/vercel.json',
   version: 2,
+  framework: null,
   outputDirectory: 'carnaval/web',
   cleanUrls: true,
   buildCommand: 'node scripts/build-vercel.mjs',

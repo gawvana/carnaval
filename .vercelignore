@@ -1,0 +1,40 @@
+# Vercel Deployment Ignore Rules
+# The frontend on Vercel must ONLY bundle static Mini App assets and proxy config.
+# Cardinal backend is hosted separately on Infrlo.
+
+# Python source and runtime files
+*.py
+*.pyc
+__pycache__/
+requirements.txt
+carnaval/*.py
+carnaval/__pycache__/
+
+# Cardinal backend directories
+FunPayAPI/
+tg_bot/
+Utils/
+locales/
+configs/
+storage/
+tests/
+logs/
+plugins/
+data/
+docs/
+
+# Docker and deployment scripts for Cardinal backend
+Dockerfile
+docker-compose.yml
+.dockerignore
+FunPayCardinal@.service
+install-fpc.sh
+Setup.bat
+Start.bat
+delete.json
+
+# Documentation and scratch files
+README.md
+README-CARNAVAL.md
+SECURITY_AUDIT.md
+.pytest_cache/

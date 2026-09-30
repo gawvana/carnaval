@@ -48,3 +48,5 @@ carnaval/web/js/runtime-config.js
 *.zip
 *.tar.gz
 test.py
+.vercel
+.env*
