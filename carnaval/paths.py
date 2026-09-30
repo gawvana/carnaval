@@ -17,17 +17,26 @@ logger = logging.getLogger("Carnaval.Paths")
 def get_data_dir() -> str:
     """
     Определяет корневую директорию данных:
-    1. Переменная окружения DATA_DIR
-    2. /data (если существует или доступна для создания в контейнере)
+    1. Переменная окружения DATA_DIR (если доступна для записи)
+    2. /data (если существует и доступна для записи)
     3. ./data (локальный fallback в корне проекта)
     """
     env_dir = os.getenv("DATA_DIR")
     if env_dir:
-        return os.path.abspath(env_dir)
+        try:
+            os.makedirs(env_dir, exist_ok=True)
+            if os.access(env_dir, os.W_OK):
+                return os.path.abspath(env_dir)
+        except Exception:
+            pass
 
-    # В Linux контейнерах проверяем /data
+    # В Linux контейнерах проверяем /data с проверкой прав на запись
     if os.name != "nt" and os.path.isdir("/data"):
-        return "/data"
+        try:
+            if os.access("/data", os.W_OK):
+                return "/data"
+        except Exception:
+            pass
 
     # Иначе локальная папка data в корне проекта
     base = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -59,13 +68,12 @@ def init_persistent_dirs() -> None:
         PLUGINS_DIR,
     ]
     for d in dirs:
-        os.makedirs(d, exist_ok=True)
-        if os.name != "nt":
-            try:
-                # Ограничиваем доступ только текущему пользователю
+        try:
+            os.makedirs(d, exist_ok=True)
+            if os.name != "nt":
                 os.chmod(d, 0o700)
-            except Exception:
-                pass
+        except Exception as e:
+            logger.warning(f"Carnaval.Paths: не удалось создать или выставить права на {d}: {e}")
 
     # Миграция: если в корне проекта есть configs/_main.cfg, а в DATA_DIR нет
     base = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
