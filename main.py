@@ -99,6 +99,9 @@ print(f"{Fore.MAGENTA}{Style.BRIGHT} * Плагины: {Fore.BLUE}{Style.BRIGHT}
 print(f"{Fore.MAGENTA}{Style.BRIGHT} * Донат: {Fore.BLUE}{Style.BRIGHT}t.me/sidor_donate")
 print(f"{Fore.MAGENTA}{Style.BRIGHT} * Telegram-чат: {Fore.BLUE}{Style.BRIGHT}t.me/funpay_cardinal")
 
+import bootstrap_env
+bootstrap_env.bootstrap()
+
 if not os.path.exists("configs/_main.cfg"):
     first_setup()
     sys.exit()
@@ -117,6 +120,7 @@ if sys.platform == "linux" and os.getenv('FPC_IS_RUNNIG_AS_SERVICE', '0') == '1'
 try:
     logger.info("$MAGENTAЗагружаю конфиг _main.cfg...")  # locale
     MAIN_CFG = cfg_loader.load_main_config("configs/_main.cfg")
+    cfg_loader.load_carnaval_config(MAIN_CFG, "configs/_main.cfg")
     localizer = Localizer(MAIN_CFG["Other"]["language"])
     _ = localizer.translate
 
