@@ -688,11 +688,16 @@ class Cardinal(object):
 
         # Carnaval Mini App (встроенный сервис)
         try:
-            if self.MAIN_CFG.getboolean("Carnaval", "enabled", fallback=True):
+            is_enabled = (os.getenv("CARNAVAL_ENABLED", "1").strip().lower() in ("1", "true", "yes") and
+                          self.MAIN_CFG.getboolean("Carnaval", "enabled", fallback=True))
+            if is_enabled:
                 from carnaval.server import start as _carnaval_start
-                _host = self.MAIN_CFG.get("Carnaval", "host", fallback="0.0.0.0")
-                _port = int(os.getenv("PORT") or self.MAIN_CFG.get("Carnaval", "port", fallback="8000"))
+                _host = os.getenv("CARNAVAL_HOST") or self.MAIN_CFG.get("Carnaval", "host", fallback="0.0.0.0")
+                _port = int(os.getenv("PORT") or os.getenv("CARNAVAL_PORT") or self.MAIN_CFG.get("Carnaval", "port", fallback="5000"))
+                logger.info(f"Carnaval: запуск встроенного Mini App сервера на {_host}:{_port}...")
                 _carnaval_start(self, _host, _port)
+            else:
+                logger.info("Carnaval: Mini App сервер отключен (CARNAVAL_ENABLED=0)")
         except Exception:
             logger.warning("Carnaval: ошибка при запуске Mini App сервера")
             logger.debug("TRACEBACK", exc_info=True)

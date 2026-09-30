@@ -266,9 +266,9 @@ def load_carnaval_config(config, config_path: str) -> None:
     """
     SECTION = "Carnaval"
     DEFAULTS = {
-        "enabled":        "0",
-        "host":           "127.0.0.1",
-        "port":           "8765",
+        "enabled":        "1",
+        "host":           "0.0.0.0",
+        "port":           "5000",
         "secretKey":      "",   # обязательно задать вручную
         "allowedOrigins": "*",  # CORS: * = любой, или через запятую (https://myapp.vercel.app)
     }

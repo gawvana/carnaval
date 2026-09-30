@@ -196,7 +196,7 @@ def build_app(allowed_origins: list[str] | None = None, serve_static: bool | Non
     return app
 
 
-def start(cardinal: "Cardinal", host: str = "127.0.0.1", port: int = 8765) -> None:
+def start(cardinal: "Cardinal", host: str = "0.0.0.0", port: int = 5000) -> None:
     """
     Запустить Carnaval сервер в daemon-потоке.
     Вызывать из cardinal.py ПОСЛЕ инициализации аккаунта.
@@ -215,19 +215,35 @@ def start(cardinal: "Cardinal", host: str = "127.0.0.1", port: int = 8765) -> No
     set_allowed_origins(raw_origins)
 
     app = build_app()
-    config = uvicorn.Config(
-        app,
-        host=host,
-        port=port,
-        log_level="warning",
-        access_log=False,
-    )
-    server = uvicorn.Server(config)
 
-    def _run():
-        logger.info(f"Carnaval: запуск на http://{host}:{port}")
-        server.run()
+    def _run_server(bind_host: str, bind_port: int, is_primary: bool = True):
+        try:
+            config = uvicorn.Config(
+                app,
+                host=bind_host,
+                port=bind_port,
+                log_level="warning",
+                access_log=False,
+            )
+            srv = uvicorn.Server(config)
+            logger.info(f"Carnaval: запуск на http://{bind_host}:{bind_port}")
+            srv.run()
+        except Exception as e:
+            if is_primary:
+                logger.error(f"Carnaval: ошибка запуска на {bind_host}:{bind_port}: {e}")
+            else:
+                logger.debug(f"Carnaval: резервный порт {bind_port} не запущен: {e}")
 
-    t = threading.Thread(target=_run, name="Carnaval", daemon=True)
+    # Основной сервер
+    t = threading.Thread(target=_run_server, args=(host, port, True), name=f"Carnaval-{port}", daemon=True)
     t.start()
-    logger.info("Carnaval: поток запущен")
+    logger.info(f"Carnaval: основной поток запущен на http://{host}:{port}")
+
+    # Резервный порт: обеспечивает доступность как по порту 5000, так и по 8000
+    fallback_port = 8000 if port == 5000 else 5000
+    try:
+        t_fallback = threading.Thread(target=_run_server, args=(host, fallback_port, False), name=f"Carnaval-{fallback_port}", daemon=True)
+        t_fallback.start()
+        logger.info(f"Carnaval: резервный поток запущен на порту {fallback_port}")
+    except Exception as e:
+        logger.debug(f"Carnaval: резервный поток не создан: {e}")

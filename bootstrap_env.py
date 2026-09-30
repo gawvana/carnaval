@@ -60,7 +60,7 @@ def bootstrap() -> bool:
         logger.info(f"BootstrapEnv: TG_PANEL_PASSWORD не указан. Установлен пароль по умолчанию для Telegram ПУ: {tg_password}")
     secret_hash = hash_password(tg_password)
 
-    port = os.getenv("PORT") or os.getenv("CARNAVAL_PORT", "8765")
+    port = os.getenv("PORT") or os.getenv("CARNAVAL_PORT", "5000")
     host = os.getenv("CARNAVAL_HOST", "0.0.0.0")
     carnaval_enabled = os.getenv("CARNAVAL_ENABLED", "1")
     carnaval_secret = os.getenv("CARNAVAL_SECRET", "").strip() or secrets.token_hex(32)
@@ -186,18 +186,18 @@ def _sync_existing_config(config_path: str) -> bool:
         changed = False
 
         # Синхронизация порта ($PORT от PaaS платформы имеет наивысший приоритет)
-        port = os.getenv("PORT") or os.getenv("CARNAVAL_PORT")
-        if port and cfg.get("Carnaval", "port", fallback=None) != str(port):
+        port = os.getenv("PORT") or os.getenv("CARNAVAL_PORT", "5000")
+        if cfg.get("Carnaval", "port", fallback=None) != str(port):
             cfg.set("Carnaval", "port", str(port))
             changed = True
 
-        host = os.getenv("CARNAVAL_HOST")
-        if host and cfg.get("Carnaval", "host", fallback=None) != host:
+        host = os.getenv("CARNAVAL_HOST", "0.0.0.0")
+        if cfg.get("Carnaval", "host", fallback=None) != host:
             cfg.set("Carnaval", "host", host)
             changed = True
 
-        enabled = os.getenv("CARNAVAL_ENABLED")
-        if enabled and cfg.get("Carnaval", "enabled", fallback=None) != enabled:
+        enabled = os.getenv("CARNAVAL_ENABLED", "1")
+        if cfg.get("Carnaval", "enabled", fallback=None) != enabled:
             cfg.set("Carnaval", "enabled", enabled)
             changed = True
 

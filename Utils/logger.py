@@ -99,7 +99,7 @@ class FileLoggerFormatter(logging.Formatter):
         return formatter.format(record)
 
 
-LOGGER_NAMES = ["main", "FunPayAPI", "FPC", "TGBot"]
+LOGGER_NAMES = ["main", "FunPayAPI", "FPC", "TGBot", "Carnaval", "BootstrapEnv"]
 """Логгеры, пишущие и в консоль, и в файл лога (в т.ч. дочерние, например FPC.<имя_плагина>)."""
 
 
