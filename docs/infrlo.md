@@ -50,17 +50,17 @@ Infrlo Backend (FastAPI + Cardinal)
    - Protocol: `HTTP`
 
 5. **Networking**:
-   - Public HTTPS: Включено (публичный домен вида `https://<app-name>.infrlo.app`)
+   - Public HTTPS: Включено (публичный домен вида `https://<app-name>.infrlo.com`)
 
 ---
 
 ## 3. Подключение Vercel Фронтенда
 
-1. Скопируйте публичный HTTPS URL созданного сервиса Infrlo (например: `https://carnaval-backend.infrlo.app`).
+1. Скопируйте публичный HTTPS URL созданного сервиса Infrlo (например: `https://carnavalqmjw.infrlo.com`).
 2. В проекте на **Vercel**:
    - В разделе **Settings** -> **Environment Variables** укажите:
      ```env
-     BACKEND_PUBLIC_ORIGIN=https://carnaval-backend.infrlo.app
+     BACKEND_PUBLIC_ORIGIN=https://carnavalqmjw.infrlo.com
      ```
    - Запустите деплой (`node scripts/build-vercel.mjs` выполнится автоматически).
 3. В Telegram у `@BotFather`:

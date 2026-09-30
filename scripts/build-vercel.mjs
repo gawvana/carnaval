@@ -45,7 +45,7 @@ const rawBackend = (
   process.env.BACKEND_PUBLIC_ORIGIN ||
   process.env.INFR_BACKEND_URL ||
   process.env.CARNAVAL_API_URL ||
-  'https://carnaval.infrlo.app'
+  'https://carnavalqmjw.infrlo.com'
 ).trim();
 
 const backendOrigin = rawBackend.replace(/\/+$/, '');

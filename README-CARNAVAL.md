@@ -59,14 +59,14 @@
      TG_BOT_TOKEN=ваш_токен_бота
      ```
    - Настройте Healthcheck: `/health` (порт `8000`).
-   - Получите публичный адрес бэкенда: `https://<ваш-бэкенд>.infrlo.app`.
+   - Получите публичный адрес бэкенда: `https://carnavalqmjw.infrlo.com`.
 3. **Разверните фронтенд на Vercel**:
    - Импортируйте репозиторий `gawvana/carnaval` в Vercel.
    - Build Command: `node scripts/build-vercel.mjs`
    - Output Directory: `carnaval/web`
    - Environment Variables:
      ```env
-     BACKEND_PUBLIC_ORIGIN=https://<ваш-бэкенд>.infrlo.app
+     BACKEND_PUBLIC_ORIGIN=https://carnavalqmjw.infrlo.com
      ```
    - Получите публичный адрес фронтенда: `https://<ваш-проект>.vercel.app`.
 4. **Настройте кнопку Menu Button в Telegram**:

@@ -236,3 +236,32 @@ def test_config_js_and_vercel_files_exist():
     # Проверяем наличие build-vercel.mjs
     build_script = os.path.normpath(os.path.join(base, "scripts", "build-vercel.mjs"))
     assert os.path.exists(build_script), f"scripts/build-vercel.mjs must exist: {build_script}"
+
+
+def test_more_tab_assets_and_infrlo_domain_sync():
+    """Проверяет актуальность Infrlo URL, стили more.css и безопасность more.js."""
+    base = os.path.join(os.path.dirname(__file__), "..")
+
+    # 1. vercel.json указывает на carnavalqmjw.infrlo.com
+    vercel_json = os.path.normpath(os.path.join(base, "vercel.json"))
+    with open(vercel_json, encoding="utf-8") as f:
+        v_data = f.read()
+    assert "carnavalqmjw.infrlo.com" in v_data, "vercel.json rewrite must point to carnavalqmjw.infrlo.com"
+
+    # 2. more.css существует и подключен в index.html
+    more_css = os.path.normpath(os.path.join(base, "carnaval", "web", "css", "more.css"))
+    assert os.path.exists(more_css), "more.css must exist"
+    index_html = os.path.normpath(os.path.join(base, "carnaval", "web", "index.html"))
+    with open(index_html, encoding="utf-8") as f:
+        html = f.read()
+    assert "/css/more.css" in html, "index.html must include more.css"
+
+    # 3. more.js использует escHtml и содержит 6 секций
+    more_js = os.path.normpath(os.path.join(base, "carnaval", "web", "js", "pages", "more.js"))
+    assert os.path.exists(more_js), "more.js must exist"
+    with open(more_js, encoding="utf-8") as f:
+        js = f.read()
+    assert "escHtml" in js, "more.js must use escHtml to prevent XSS"
+    for cat in ["notifications", "greetings", "blacklist", "plugins", "security", "system"]:
+        assert cat in js, f"more.js must support category {cat}"
+

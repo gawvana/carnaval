@@ -7,7 +7,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://carnaval.infrlo.app/api/:path*"
+      "destination": "https://carnavalqmjw.infrlo.com/api/:path*"
     }
   ],
   "headers": [
