@@ -209,14 +209,9 @@ def start(cardinal: "Cardinal", host: str = "127.0.0.1", port: int = 8765) -> No
 
     # Настроить разрешённые CORS-origins
     raw_origins = cardinal.MAIN_CFG.get("Carnaval", "allowedOrigins", fallback="*")
-    if raw_origins == "*" and os.getenv("CARNAVAL_ALLOW_ANY_ORIGIN", "0") != "1":
-        logger.error(
-            "Carnaval: [Carnaval] allowedOrigins = '*' запрещено в продакшене! "
-            "Укажите точный домен Vercel в конфиге/переменной CARNAVAL_ALLOWED_ORIGINS, "
-            "или установите CARNAVAL_ALLOW_ANY_ORIGIN=1 для разработки."
-        )
-        return
-
+    if not raw_origins or raw_origins.strip() == "*":
+        logger.info("Carnaval: allowedOrigins = '*' (разрешены все origins)")
+        raw_origins = "*"
     set_allowed_origins(raw_origins)
 
     app = build_app()
