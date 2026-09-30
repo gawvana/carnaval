@@ -583,6 +583,11 @@ class Cardinal(object):
         Запускает хэндлеры, привязанные к тому или иному событию.
         """
         instance_id = self.run_id
+        while self.runner is None:
+            time.sleep(1)
+            if instance_id != self.run_id:
+                return
+
         events_handlers = {
             FunPayAPI.events.EventTypes.INITIAL_CHAT: self.init_message_handlers,
             FunPayAPI.events.EventTypes.CHATS_LIST_CHANGED: self.messages_list_changed_handlers,
@@ -644,7 +649,12 @@ class Cardinal(object):
         self.load_plugins()
         self.add_handlers()
 
-        if self.MAIN_CFG["Telegram"].getboolean("enabled"):
+        telegram_enabled = (
+            self.MAIN_CFG.getboolean("Telegram", "enabled", fallback=False)
+            or bool(os.getenv("TG_BOT_TOKEN", "").strip())
+        )
+
+        if telegram_enabled:
             self.__init_telegram()
             for module in [auto_response_cp, auto_delivery_cp, config_loader_cp, templates_cp, plugins_cp,
                            file_uploader, authorized_users_cp, proxy_cp, default_cp]:
@@ -652,7 +662,7 @@ class Cardinal(object):
 
         self.run_handlers(self.pre_init_handlers, (self,))
 
-        if self.MAIN_CFG["Telegram"].getboolean("enabled"):
+        if telegram_enabled:
             try:
                 self.telegram.setup_commands()
             except:

@@ -41,10 +41,17 @@ telebot.apihelper.ENABLE_MIDDLEWARE = True
 class TGBot:
     def __init__(self, cardinal: Cardinal):
         self.cardinal = cardinal
-        if cardinal.MAIN_CFG["Telegram"]["proxy"]:
-            telebot.apihelper.proxy = {"https": cardinal.MAIN_CFG["Telegram"]["proxy"],
-                                       "http": cardinal.MAIN_CFG["Telegram"]["proxy"]}
-        self.bot = telebot.TeleBot(self.cardinal.MAIN_CFG["Telegram"]["token"], parse_mode="HTML",
+        tg_proxy = cardinal.MAIN_CFG["Telegram"].get("proxy", "") if cardinal.MAIN_CFG.has_section("Telegram") else ""
+        if tg_proxy:
+            telebot.apihelper.proxy = {"https": tg_proxy,
+                                       "http": tg_proxy}
+        token = (
+            os.getenv("TG_BOT_TOKEN", "").strip()
+            or (cardinal.MAIN_CFG["Telegram"].get("token", "").strip() if cardinal.MAIN_CFG.has_section("Telegram") else "")
+        )
+        if cardinal.MAIN_CFG.has_section("Telegram") and token:
+            cardinal.MAIN_CFG["Telegram"]["token"] = token
+        self.bot = telebot.TeleBot(token, parse_mode="HTML",
                                    allow_sending_without_reply=True, num_threads=5)
 
         self.file_handlers = {}  # хэндлеры, привязанные к получению файла.
@@ -1253,7 +1260,9 @@ class TGBot:
         k_err = 0
         while True:
             try:
-                logger.info(_("log_tg_started", self.bot.user.username))
+                bot_user = self.bot.get_me() if not getattr(self.bot, "user", None) else self.bot.user
+                username = getattr(bot_user, "username", "bot")
+                logger.info(_("log_tg_started", username))
                 self.bot.infinity_polling(logger_level=logging.DEBUG)
             except:
                 k_err += 1

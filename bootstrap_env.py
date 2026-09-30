@@ -55,7 +55,10 @@ def bootstrap() -> bool:
 
     user_agent = os.getenv("FUNPAY_USER_AGENT", DEFAULT_UA).strip()
     tg_password = os.getenv("TG_PANEL_PASSWORD", "").strip()
-    secret_hash = hash_password(tg_password) if tg_password else "ХешСекретногоПароля"
+    if not tg_password:
+        tg_password = "CarnavalAdmin2026!"
+        logger.info(f"BootstrapEnv: TG_PANEL_PASSWORD не указан. Установлен пароль по умолчанию для Telegram ПУ: {tg_password}")
+    secret_hash = hash_password(tg_password)
 
     port = os.getenv("PORT") or os.getenv("CARNAVAL_PORT", "8765")
     host = os.getenv("CARNAVAL_HOST", "0.0.0.0")
@@ -213,10 +216,22 @@ def _sync_existing_config(config_path: str) -> bool:
             cfg.set("Carnaval", "secretKey", secret)
             changed = True
 
+        # Синхронизация Telegram токена если передан через env
+        tg_token = (os.getenv("TG_BOT_TOKEN") or os.getenv("TG_TOKEN", "")).strip()
+        if tg_token:
+            if not cfg.has_section("Telegram"):
+                cfg.add_section("Telegram")
+            if cfg.get("Telegram", "token", fallback=None) != tg_token:
+                cfg.set("Telegram", "token", tg_token)
+                changed = True
+            if cfg.get("Telegram", "enabled", fallback="0") != "1":
+                cfg.set("Telegram", "enabled", "1")
+                changed = True
+
         if changed:
             with open(config_path, "w", encoding="utf-8") as f:
                 cfg.write(f)
-            logger.info("BootstrapEnv: секция [Carnaval] синхронизирована с переменными среды.")
+            logger.info("BootstrapEnv: конфигурация синхронизирована с переменными среды.")
 
         return True
     except Exception as e:

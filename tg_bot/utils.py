@@ -63,23 +63,36 @@ class NotificationTypes:
 
 def load_authorized_users() -> dict[int, dict[str, bool | None | str]]:
     """
-    Загружает авторизированных пользователей из кэша.
+    Загружает авторизированных пользователей из кэша и переменных среды.
 
     :return: список из id авторизированных пользователей.
     """
-    if not os.path.exists("storage/cache/tg_authorized_users.json"):
-        return dict()
-    with open("storage/cache/tg_authorized_users.json", "r", encoding="utf-8") as f:
-        data = f.read()
-    data = json.loads(data)
     result = {}
-    if isinstance(data, list):
-        for i in data:
-            result[i] = {}
-        save_authorized_users(result)
-    else:
-        for k, v in data.items():
-            result[int(k)] = v
+    if os.path.exists("storage/cache/tg_authorized_users.json"):
+        with open("storage/cache/tg_authorized_users.json", "r", encoding="utf-8") as f:
+            data = f.read()
+        try:
+            data = json.loads(data)
+            if isinstance(data, list):
+                for i in data:
+                    result[int(i)] = {}
+                save_authorized_users(result)
+            elif isinstance(data, dict):
+                for k, v in data.items():
+                    result[int(k)] = v
+        except Exception:
+            pass
+
+    admin_id_env = os.getenv("TG_ADMIN_ID") or os.getenv("ADMIN_ID")
+    if admin_id_env:
+        try:
+            for aid in str(admin_id_env).split(","):
+                aid = aid.strip()
+                if aid and aid.isdigit() and int(aid) not in result:
+                    result[int(aid)] = {}
+        except Exception:
+            pass
+
     return result
 
 
