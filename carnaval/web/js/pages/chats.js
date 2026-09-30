@@ -9,6 +9,7 @@ import { getChats, getChatHistory, sendChatMessage, sendChatImage, getBuyerViewi
 import { tg } from '../tg.js';
 import { renderHeader } from '../ui/header.js';
 import { showToast } from '../ui/toast.js';
+import { escapeHtml } from '../ui/sanitize.js';
 
 let _activeChatId = null;
 let _activeChatName = null;
@@ -79,9 +80,12 @@ async function loadChatsList() {
 }
 
 function renderChatCardHTML(c) {
-  const initials = (c.name || 'U')[0].toUpperCase();
+  const initials = escapeHtml((c.name || 'U')[0].toUpperCase());
+  const safeId = escapeHtml(c.id);
+  const safeName = escapeHtml(c.name);
+  const safeMsg = escapeHtml(c.last_message_text || 'Нет сообщений');
   return `
-    <button class="card n press chat-card-btn rv in" data-id="${c.id}" data-name="${c.name}" style="height:auto; min-height:76px; padding:14px; text-align:left; width:100%; display:flex; align-items:center; gap:12px">
+    <button class="card n press chat-card-btn rv in" data-id="${safeId}" data-name="${safeName}" style="height:auto; min-height:76px; padding:14px; text-align:left; width:100%; display:flex; align-items:center; gap:12px">
       <div style="width:44px; height:44px; border-radius:50%; background:var(--p); color:var(--on-p); display:grid; place-items:center; font-weight:800; font-size:16px; flex:none; position:relative">
         ${initials}
         ${c.unread ? `<i style="position:absolute; top:0; right:0; width:12px; height:12px; border-radius:50%; background:var(--err); border:2px solid var(--n)"></i>` : ''}
@@ -89,11 +93,11 @@ function renderChatCardHTML(c) {
 
       <div style="flex:1; min-width:0">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px">
-          <b style="font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${c.name}</b>
+          <b style="font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${safeName}</b>
           ${c.unread ? `<span style="font-size:11px; font-weight:700; color:var(--err); background:var(--err-c); padding:2px 6px; border-radius:6px">Новое</span>` : ''}
         </div>
         <div style="font-size:13px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap">
-          ${c.last_message_text || 'Нет сообщений'}
+          ${safeMsg}
         </div>
       </div>
     </button>
@@ -118,7 +122,7 @@ async function openChatThread(chatId, chatName) {
         <svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
       </button>
       <div>
-        <b style="font-size:16px; display:block">${chatName}</b>
+        <b style="font-size:16px; display:block">${escapeHtml(chatName)}</b>
         <span id="buyer-viewing-label" style="font-size:11px; color:var(--muted)"></span>
       </div>
     </div>
@@ -252,10 +256,13 @@ function appendMessageHTML(m, scroll = true) {
   el.style.alignItems = isMe ? 'flex-end' : 'flex-start';
   el.style.margin = '4px 0';
 
+  const safeImg = m.image_link && /^https?:\/\//i.test(m.image_link) ? escapeHtml(m.image_link) : '';
+  const safeText = escapeHtml(m.text || '');
+
   el.innerHTML = `
     <div style="max-width:80%; padding:10px 14px; border-radius:${isMe ? '18px 18px 4px 18px' : '18px 18px 18px 4px'}; background:${isMe ? 'var(--primary)' : 'var(--n)'}; color:${isMe ? 'var(--on-primary)' : 'var(--on-n)'}; font-size:14px; word-break:break-word">
-      ${m.image_link ? `<img src="${m.image_link}" style="max-width:100%; border-radius:12px; margin-bottom:6px; display:block">` : ''}
-      <div>${m.text || ''}</div>
+      ${safeImg ? `<img src="${safeImg}" style="max-width:100%; border-radius:12px; margin-bottom:6px; display:block">` : ''}
+      <div>${safeText}</div>
     </div>
   `;
 

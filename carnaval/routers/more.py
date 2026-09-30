@@ -317,9 +317,50 @@ async def change_golden_key(request: Request, body: GoldenKeyChange, user_id: in
     return JSONResponse({"ok": True})
 
 
+@router.delete("/more/account/golden-key")
+async def delete_golden_key_route(request: Request, user_id: int = Depends(require_user), confirm: bool = Query(False)):
+    if not await _check_confirmation(request, confirm):
+        return JSONResponse(
+            {"error": "confirm_required", "message": "Удаление golden_key требует confirm=true"},
+            status_code=400,
+        )
+    ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.delete_golden_key, True)
+    if not ok:
+        raise HTTPException(400, err)
+    logger.warning(f"AUDIT: user_id={user_id} удалил golden_key аккаунта")
+    return JSONResponse({"ok": True})
+
+
 # ─────────────────────────────────────────────────────────────
-# 8. Логи
+# 8. Логи и аудит
 # ─────────────────────────────────────────────────────────────
+
+@router.get("/more/audit-logs")
+async def get_audit_logs_route(request: Request, user_id: int = Depends(require_user), limit: int = 100):
+    """Возвращает историю событий безопасности и аудита."""
+    from carnaval.db import get_db_connection
+    conn = get_db_connection()
+    try:
+        limit_clean = min(max(1, limit), 200)
+        rows = conn.execute(
+            "SELECT id, action, telegram_user_id, ip, details, created_at FROM audit_logs ORDER BY id DESC LIMIT ?",
+            (limit_clean,)
+        ).fetchall()
+        logs = [
+            {
+                "id": r["id"],
+                "action": r["action"],
+                "telegram_user_id": r["telegram_user_id"],
+                "ip": r["ip"],
+                "details": r["details"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
+        return JSONResponse({"logs": logs})
+    finally:
+        conn.close()
+
 
 @router.get("/more/logs")
 async def get_logs(request: Request, n: int = 150, user_id: int = Depends(require_user)):
@@ -354,7 +395,11 @@ async def download_backup(request: Request, user_id: int = Depends(require_user)
     return Response(
         content=data,
         media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename=carnaval_backup_{ts}.zip"},
+        headers={
+            "Content-Disposition": f'attachment; filename="carnaval_backup_{ts}.zip"',
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+        },
     )
 
 
@@ -371,6 +416,8 @@ async def restore_backup(
             {"error": "confirm_required", "message": "Восстановление бэкапа требует confirm=true"},
             status_code=400,
         )
+    if file.size and file.size > 25 * 1024 * 1024:
+        raise HTTPException(413, "Файл бэкапа превышает лимит 25 МБ")
     content = await file.read()
     ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.restore_backup, content)
     if not ok:

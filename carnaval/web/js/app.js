@@ -12,6 +12,7 @@ import { initGlassEffect } from './ui/glass.js';
 import { initSheet } from './ui/sheet.js';
 import { startSSE, onEvent, onConnectionStatus } from './sse.js';
 import { showToast } from './ui/toast.js';
+import { renderOnboarding, openPanelUnlockModal } from './ui/onboarding.js';
 
 document.documentElement.classList.add('js');
 
@@ -42,14 +43,37 @@ async function main() {
   }
 
   // 4. Авторизация по initData
-  const ok = await auth(tg.initData);
+  const authResult = await auth(tg.initData);
 
-  if (!ok) {
+  if (!authResult) {
     hideSplash();
     renderUnauthorizedScreen(false);
     return;
   }
 
+  // Слушатель блокировки панели (403 panel_locked)
+  window.addEventListener('carnaval:panel_locked', () => {
+    openPanelUnlockModal(() => {
+      router.reload();
+    });
+  });
+
+  // Проверка первоначальной настройки (onboarding)
+  if (authResult.system_state === 'UNINITIALIZED' || authResult.system_state === 'OWNER_CLAIM') {
+    hideSplash();
+    const appEl = document.getElementById('app');
+    if (appEl) {
+      renderOnboarding(appEl, async () => {
+        await startAppDashboard();
+      });
+    }
+    return;
+  }
+
+  await startAppDashboard();
+}
+
+async function startAppDashboard() {
   // 5. Инициализация SPA роутера (рендерит дашборд)
   await router.init();
 

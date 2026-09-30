@@ -12,9 +12,11 @@ from .orders import router as orders_router
 from .chats import router as chats_router
 from .automation import router as automation_router
 from .more import router as more_router
+from .setup import router as setup_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router, tags=["auth"])
+api_router.include_router(setup_router, tags=["setup"])
 api_router.include_router(dashboard_router, tags=["dashboard"])
 api_router.include_router(events_router, tags=["events"])
 api_router.include_router(settings_router, tags=["settings"])

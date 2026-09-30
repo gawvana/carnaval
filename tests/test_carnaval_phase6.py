@@ -222,13 +222,14 @@ def test_config_js_and_vercel_files_exist():
     assert "getApiBase" in content, "config.js must export getApiBase()"
     assert "apiUrl" in content, "config.js must export apiUrl()"
 
+    # Проверяем, что в архитектуре Infrlo single-origin vercel.json удален
     vercel_json = os.path.normpath(os.path.join(base, "vercel.json"))
-    assert os.path.exists(vercel_json), f"vercel.json not found: {vercel_json}"
+    assert not os.path.exists(vercel_json), f"vercel.json must NOT exist in single-origin setup: {vercel_json}"
 
-    # Проверяем, что serverless proxy api/[...path].js удален (Section 3.1)
+    # Проверяем, что serverless proxy api/[...path].js удален
     proxy_js = os.path.normpath(os.path.join(base, "api", "[...path].js"))
     assert not os.path.exists(proxy_js), f"api/[...path].js should be deleted: {proxy_js}"
 
-    # Проверяем наличие scripts/gen-config.mjs
+    # Проверяем, что Vercel скрипт gen-config.mjs удален
     gen_script = os.path.normpath(os.path.join(base, "scripts", "gen-config.mjs"))
-    assert os.path.exists(gen_script), f"scripts/gen-config.mjs not found: {gen_script}"
+    assert not os.path.exists(gen_script), f"scripts/gen-config.mjs must be deleted: {gen_script}"

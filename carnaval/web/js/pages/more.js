@@ -395,21 +395,80 @@ async function renderPlugins(body) {
 // ── Безопасность ─────────────────────────────────────────────────────────────
 
 async function renderSecurity(body) {
-  const [accInfo, proxyInfo, { users: authUsers }] = await Promise.all([
-    api.getAccountInfo(),
-    api.getProxy(),
-    api.getAuthorizedUsers(),
+  const [accInfo, proxyInfo, { users: authUsers }, sessionsRes, auditRes] = await Promise.all([
+    api.getAccountInfo().catch(() => ({})),
+    api.getProxy().catch(() => ({ enabled: false, proxy_list: [] })),
+    api.getAuthorizedUsers().catch(() => ({ users: [] })),
+    api.getActiveSessions().catch(() => ({ sessions: [] })),
+    api.getAuditLogs(10).catch(() => ({ logs: [] })),
   ]);
+
+  const sessions = sessionsRes.sessions || [];
+  const auditLogs = auditRes.logs || [];
+  const gkMasked = accInfo.golden_key_masked || (accInfo.golden_key_configured ? '••••••••••••••••' : 'Не задан');
 
   body.innerHTML = `
     <!-- Аккаунт FunPay -->
     <p class="sec-title">Аккаунт FunPay</p>
     <div class="rv card glass" style="padding:16px;margin-bottom:16px">
       <div class="tx" style="font-size:14px;margin-bottom:4px">👤 <b>${escHtml(accInfo.username || '—')}</b> (ID: ${accInfo.id || '—'})</div>
-      <div class="tx" style="font-size:13px;opacity:.6;margin-bottom:12px">golden_key: <code>${escHtml(accInfo.golden_key)}</code></div>
-      <button id="gk-btn" class="press" style="padding:10px 16px;border-radius:14px;background:var(--warn,#ff9800);color:#fff;font-weight:600;font-size:14px;width:100%">
-        🔑 Сменить golden_key
+      <div class="tx" style="font-size:13px;opacity:.6;margin-bottom:12px">golden_key: <code>${escHtml(gkMasked)}</code></div>
+      <div style="display:flex;gap:10px">
+        <button id="gk-btn" class="press" style="flex:1;padding:10px 14px;border-radius:14px;background:var(--warn,#ff9800);color:#fff;font-weight:600;font-size:13px">
+          🔑 Сменить golden_key
+        </button>
+        ${accInfo.golden_key_configured ? `
+          <button id="gk-del-btn" class="press" style="padding:10px 14px;border-radius:14px;background:var(--danger,#ff4d4f);color:#fff;font-weight:600;font-size:13px">
+            Удалить
+          </button>
+        ` : ''}
+      </div>
+    </div>
+
+    <!-- Мастер-пароль панели -->
+    <p class="sec-title">Пароль панели управления</p>
+    <div class="rv card glass" style="padding:16px;margin-bottom:16px">
+      <p class="tx" style="font-size:12px;opacity:.6;margin-bottom:12px;line-height:1.4">
+        🔒 Пароль защищает доступ к чувствительным операциям и настройкам бота (Argon2id).
+      </p>
+      <button id="change-pwd-btn" class="press" style="padding:10px 16px;border-radius:14px;background:var(--p);color:#fff;font-weight:600;font-size:14px;width:100%">
+        🛡️ Сменить пароль панели
       </button>
+    </div>
+
+    <!-- Активные сессии -->
+    <p class="sec-title">Активные сессии</p>
+    <div class="rv card glass" style="padding:16px;margin-bottom:16px">
+      <div id="sessions-list" style="margin-bottom:12px">
+        ${sessions.length ? sessions.map(s => `
+          <div style="padding:8px 0;border-bottom:1px solid var(--sep);font-size:12px" class="tx">
+            <div style="display:flex;justify-content:space-between">
+              <b>IP: ${escHtml(s.ip || '—')}</b>
+              <span style="opacity:.6">${escHtml(s.last_active || '')}</span>
+            </div>
+            <div style="opacity:.5;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(s.user_agent || 'Браузер')}</div>
+          </div>
+        `).join('') : '<p class="tx" style="opacity:.4;font-size:13px">Нет активных сессий</p>'}
+      </div>
+      <button id="logout-all-btn" class="press" style="padding:8px 14px;border-radius:12px;background:var(--danger,#ff4d4f);color:#fff;font-weight:600;font-size:12px;width:100%">
+        🚪 Завершить все остальные сессии
+      </button>
+    </div>
+
+    <!-- Журнал аудита -->
+    <p class="sec-title">Журнал безопасности</p>
+    <div class="rv card glass" style="padding:16px;margin-bottom:16px">
+      <div id="audit-list">
+        ${auditLogs.length ? auditLogs.map(l => `
+          <div style="padding:6px 0;border-bottom:1px solid var(--sep);font-size:12px" class="tx">
+            <div style="display:flex;justify-content:space-between">
+              <span style="font-weight:600;color:var(--p)">${escHtml(l.action)}</span>
+              <span style="opacity:.5;font-size:11px">${escHtml(l.created_at || '')}</span>
+            </div>
+            ${l.details ? `<div style="opacity:.7;font-size:11px;margin-top:2px">${escHtml(l.details)}</div>` : ''}
+          </div>
+        `).join('') : '<p class="tx" style="opacity:.4;font-size:13px">Журнал пуст</p>'}
+      </div>
     </div>
 
     <!-- Прокси -->
@@ -476,6 +535,7 @@ async function renderSecurity(body) {
                 try {
                   await api.changeGoldenKey(newKey, true);
                   showToast('golden_key изменён', 'success');
+                  renderSecurity(body);
                 } catch (ex) {
                   showToast('Ошибка: ' + ex.message, 'error');
                 }
@@ -484,6 +544,82 @@ async function renderSecurity(body) {
           },
         },
       ],
+    });
+  });
+
+  // ── Удаление golden_key
+  body.querySelector('#gk-del-btn')?.addEventListener('click', () => {
+    haptic('impact', 'medium');
+    openConfirmSheet(
+      'Вы уверены, что хотите удалить сохранённый Golden Key? Работа с аккаунтом FunPay будет приостановлена.',
+      async () => {
+        try {
+          await api.deleteGoldenKey(true);
+          showToast('Golden Key удалён', 'success');
+          renderSecurity(body);
+        } catch (ex) {
+          showToast('Ошибка: ' + ex.message, 'error');
+        }
+      }
+    );
+  });
+
+  // ── Смена мастер-пароля панели
+  body.querySelector('#change-pwd-btn')?.addEventListener('click', () => {
+    haptic('impact', 'medium');
+    openSheet({
+      title: '🛡️ Смена пароля панели',
+      content: `
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <input id="pwd-old" type="password" class="inp" placeholder="Текущий пароль"
+            style="width:100%;background:var(--bg2);border:1.5px solid var(--sep);border-radius:12px;padding:10px 14px;color:var(--tx);font-size:14px;box-sizing:border-box">
+          <input id="pwd-new" type="password" class="inp" placeholder="Новый пароль (мин. 6 символов)"
+            style="width:100%;background:var(--bg2);border:1.5px solid var(--sep);border-radius:12px;padding:10px 14px;color:var(--tx);font-size:14px;box-sizing:border-box">
+          <input id="pwd-conf" type="password" class="inp" placeholder="Повторите новый пароль"
+            style="width:100%;background:var(--bg2);border:1.5px solid var(--sep);border-radius:12px;padding:10px 14px;color:var(--tx);font-size:14px;box-sizing:border-box">
+        </div>
+      `,
+      actions: [
+        {
+          label: 'Отмена', style: 'secondary',
+          onClick: () => closeSheet(),
+        },
+        {
+          label: 'Сохранить', style: 'primary',
+          onClick: async () => {
+            const oldP = document.getElementById('pwd-old')?.value || '';
+            const newP = document.getElementById('pwd-new')?.value || '';
+            const confP = document.getElementById('pwd-conf')?.value || '';
+
+            if (!oldP) { showToast('Введите текущий пароль', 'error'); return; }
+            if (newP.length < 6) { showToast('Пароль должен быть от 6 символов', 'error'); return; }
+            if (newP !== confP) { showToast('Пароли не совпадают', 'error'); return; }
+
+            try {
+              await api.changePassword(oldP, newP);
+              closeSheet();
+              showToast('Пароль панели успешно изменён', 'success');
+              renderSecurity(body);
+            } catch (ex) {
+              showToast('Ошибка: ' + ex.message, 'error');
+            }
+          },
+        },
+      ],
+    });
+  });
+
+  // ── Завершить все остальные сессии
+  body.querySelector('#logout-all-btn')?.addEventListener('click', () => {
+    haptic('impact', 'medium');
+    openConfirmSheet('Завершить все активные сессии на других устройствах?', async () => {
+      try {
+        const res = await api.logoutAll();
+        showToast(`Отозвано сессий: ${res.revoked_count ?? 0}`, 'success');
+        renderSecurity(body);
+      } catch (ex) {
+        showToast('Ошибка: ' + ex.message, 'error');
+      }
     });
   });
 

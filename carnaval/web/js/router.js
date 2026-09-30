@@ -102,6 +102,22 @@ class Router {
     }, { root: document.getElementById('app'), threshold: .1 });
     wrap.querySelectorAll('.rv').forEach(n => io.observe(n));
   }
+
+  getCurrentRoute() {
+    return this._current || DEFAULT_ROUTE;
+  }
+
+  async reload() {
+    const id = this.getCurrentRoute();
+    const wrap = document.getElementById('main-wrap');
+    if (!wrap || !ROUTES[id]) return;
+    try {
+      wrap.innerHTML = '';
+      await ROUTES[id](wrap);
+    } catch (e) {
+      console.error('[router] reload error', e);
+    }
+  }
 }
 
 export const router = new Router();

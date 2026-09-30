@@ -8,6 +8,7 @@
 
 - [Возможности](#robot-возможности)
     - [FunPay](#shopping_cart-funpay)
+    - [Telegram Mini App — Carnaval](#carnaval-telegram-mini-app)
     - [Уведомления и ПУ в Telegram](#left_speech_bubble-уведомления-и-пу-в-telegram)
     - [Дополнительные возможности](#gear-дополнительные-возможности)
 
@@ -36,6 +37,14 @@
 - Вечный онлайн.
 - Уведомления в телеграм.
 - Полноценная ПУ в Telegram.
+
+### :performing_arts: **Telegram Mini App — Carnaval**
+
+- Современный интерфейс управления в формате Telegram Mini App (Apple Liquid Glass, Mattering UI).
+- Real-time мониторинг и SSE-стриминг событий (заказы, чаты, баланс, поднятие лотов).
+- Двухуровневая система безопасности: криптографическая верификация `initData` + защита мастер-паролем панели (Argon2id).
+- Безопасное хранение учетных данных с AES-256-GCM шифрованием.
+- Единый запуск (Single-Origin) без внешних зависимостей — подробнее в [README-CARNAVAL.md](README-CARNAVAL.md) и [docs/infrlo.md](docs/infrlo.md).
 
 ### :left_speech_bubble: **Уведомления и ПУ в Telegram**
 

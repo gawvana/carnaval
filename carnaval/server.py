@@ -63,9 +63,17 @@ def _get_client_ip(request: Request) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Устанавливает event loop для SSE-моста при старте."""
+    """Инициализация базы данных, персистентных папок и моста SSE."""
+    from carnaval.paths import init_persistent_dirs
+    from carnaval.db import init_db
+    from carnaval.sanitizer import install_log_sanitizer
+
+    init_persistent_dirs()
+    init_db()
+    install_log_sanitizer()
+
     bridge.set_loop(asyncio.get_event_loop())
-    logger.info("Carnaval: SSE bridge ready")
+    logger.info("Carnaval: SSE bridge ready, security systems initialized")
     yield
     logger.info("Carnaval: shutdown")
 
@@ -81,23 +89,21 @@ def build_app(allowed_origins: list[str] | None = None, serve_static: bool | Non
 
     origins = allowed_origins if allowed_origins is not None else get_allowed_origins()
 
-    # CORS middleware:
-    # - allow_credentials=False (Bearer-токены в Authorization, не cookies)
-    # - preflight кэш: max_age=600 сек (10 минут)
+    # CORS middleware (для кросс-доменных вызовов при необходимости)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
         allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "Last-Event-ID", "X-Requested-With"],
-        allow_credentials=False,
+        allow_headers=["Authorization", "Content-Type", "Last-Event-ID", "X-Requested-With", "X-CSRF-Token"],
+        allow_credentials=True if origins != ["*"] else False,
         max_age=600,
     )
 
     # Безопасные заголовки на все ответы
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
-        # Rate limit для мутирующих запросов (POST, PATCH, DELETE) кроме /api/auth (у него свой лимитер)
-        if request.method in ("POST", "PATCH", "DELETE") and request.url.path != "/api/auth":
+        # Rate limit для мутирующих запросов (POST, PATCH, DELETE) кроме /api/auth
+        if request.method in ("POST", "PATCH", "DELETE") and not request.url.path.startswith("/api/auth"):
             ip = _get_client_ip(request)
             now = time.time()
             hits = [t for t in _mutating_requests[ip] if now - t < _MUTATING_WINDOW]
@@ -109,55 +115,72 @@ def build_app(allowed_origins: list[str] | None = None, serve_static: bool | Non
 
         response: Response = await call_next(request)
 
-        # API ответы: без кэша + запрет встраивания во фреймы (frame-ancestors 'none')
+        # Безопасные заголовки
         if request.url.path.startswith("/api/"):
-            response.headers["Cache-Control"] = "no-store"
+            # API ответы: без кэша + запрет встраивания во фреймы
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
             response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+        else:
+            # Ответы фронтенда (HTML/JS/CSS): разрешено встраивание в Telegram WebApp
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline' https://telegram.org; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                "font-src 'self' https://fonts.gstatic.com; "
+                "img-src 'self' data: https:; "
+                "connect-src 'self'; "
+                "frame-ancestors https://web.telegram.org https://*.telegram.org telegram:;"
+            )
+
         response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         return response
 
-    # Публичный endpoint — возвращает метаинформацию (без списка origins в проде)
-    @app.get("/api/meta")
-    async def meta() -> JSONResponse:
-        """Публичный эндпоинт: версия приложения. Не требует авторизации."""
-        cardinal = get_cardinal()
-        return JSONResponse({
-            "app": "Carnaval",
-            "version": getattr(cardinal, "VERSION", "0.0.0"),
-        })
-
-    # Наблюдаемость: GET /api/health
+    # Минимальный эндпоинт проверки работоспособности (Section 41)
+    @app.get("/health")
     @app.get("/api/health")
     async def health() -> JSONResponse:
-        """Проверка работоспособности системы (для Infrlo healthcheck и мониторинга)."""
-        cardinal = get_cardinal()
-        acc = getattr(cardinal, "account", None)
-        tg = getattr(cardinal, "telegram", None)
-        uptime = int(time.time()) - cardinal.start_time if getattr(cardinal, "start_time", None) else 0
+        """Минимальный health check без раскрытия внутреннего состояния."""
+        uptime_sec = 0
+        fp_connected = False
+        tg_connected = False
+        try:
+            c = get_cardinal()
+            if hasattr(c, "start_time") and isinstance(c.start_time, (int, float)):
+                uptime_sec = int(time.time() - c.start_time)
+            if hasattr(c, "account") and c.account:
+                fp_connected = bool(getattr(c.account, "is_initiated", False) or getattr(c.account, "id", None))
+            if hasattr(c, "telegram") and c.telegram:
+                is_alive_fn = getattr(c.telegram, "is_alive", None)
+                tg_connected = bool(is_alive_fn() if callable(is_alive_fn) else is_alive_fn)
+        except Exception:
+            pass
 
         return JSONResponse({
             "status": "ok",
             "app": "Carnaval",
+            "uptime_sec": uptime_sec,
+            "funpay": "connected" if fp_connected else "disconnected",
+            "telegram": "connected" if tg_connected else "disconnected",
+            "sse": "active",
+        })
+
+    # Публичный endpoint — метаинформация
+    @app.get("/api/meta")
+    async def meta() -> JSONResponse:
+        cardinal = get_cardinal()
+        return JSONResponse({
+            "app": "Carnaval",
             "version": getattr(cardinal, "VERSION", "0.0.0"),
-            "uptime_sec": uptime,
-            "funpay": {
-                "authorized": bool(acc and getattr(acc, "id", None)),
-                "username": getattr(acc, "username", None) if acc else None,
-            },
-            "telegram": {
-                "active": bool(tg and getattr(tg, "is_alive", lambda: True)()),
-                "authorized_users_count": len(getattr(tg, "authorized_users", [])) if tg else 0,
-            },
-            "sse": {
-                "active_subscribers": bridge.get_queue_size(),
-            }
         })
 
     # API роутеры
     app.include_router(api_router, prefix="/api")
 
-    # Статика (SPA) — монтируется локально и в тестах; отключается в Docker prod через CARNAVAL_SERVE_STATIC=0
-    serve_static_flag = serve_static if serve_static is not None else (os.getenv("CARNAVAL_SERVE_STATIC", "1") != "0")
+    # Статика Mini App (единый origin)
+    serve_static_flag = serve_static if serve_static is not None else True
     if serve_static_flag:
         web_dir = os.path.join(os.path.dirname(__file__), "web")
         if os.path.isdir(web_dir):

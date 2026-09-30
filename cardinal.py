@@ -210,27 +210,29 @@ class Cardinal(object):
 
     def __init_account(self) -> None:
         """
-        Инициализирует класс аккаунта (self.account)
+        Инициализирует класс аккаунта (self.account).
+        При отсутствии Golden Key ожидает настройки через Mini App без блокировки.
         """
-        while True:
-            try:
-                self.account.get()
-                self.balance = self.get_balance()
-                greeting_text = cardinal_tools.create_greeting_text(self)
-                cardinal_tools.set_console_title(f"FunPay Cardinal - {self.account.username} ({self.account.id})")
-                for line in greeting_text.split("\n"):
-                    logger.info(line)
-                break
-            except TimeoutError:
-                logger.error(_("crd_acc_get_timeout_err"))
-            except (FunPayAPI.exceptions.UnauthorizedError, FunPayAPI.exceptions.RequestFailedError) as e:
-                logger.error(e.short_str())
-                logger.debug(f"TRACEBACK {e.short_str()}")
-            except:
-                logger.error(_("crd_acc_get_unexpected_err"))
-                logger.debug("TRACEBACK", exc_info=True)
-            logger.warning(_("crd_try_again_in_n_secs", 2))
-            time.sleep(2)
+        try:
+            from carnaval.secrets_manager import SecretManager
+            g_key = SecretManager.get_secret("golden_key") or self.MAIN_CFG["FunPay"].get("golden_key", "").strip()
+        except Exception:
+            g_key = self.MAIN_CFG["FunPay"].get("golden_key", "").strip()
+
+        if not g_key:
+            logger.warning("FunPay: Golden Key еще не настроен. Система ожидает первоначальной настройки через Mini App.")
+            return
+
+        self.account.golden_key = g_key
+        try:
+            self.account.get()
+            self.balance = self.get_balance()
+            greeting_text = cardinal_tools.create_greeting_text(self)
+            cardinal_tools.set_console_title(f"FunPay Cardinal - {self.account.username} ({self.account.id})")
+            for line in greeting_text.split("\n"):
+                logger.info(line)
+        except Exception as e:
+            logger.warning(f"FunPay: не удалось получить данные аккаунта при старте: {e}. Бот продолжит работу.")
 
     def __update_profile(self, infinite_polling: bool = True, attempts: int = 0, update_telegram_profile: bool = True,
                          update_main_profile: bool = True) -> bool:
@@ -659,32 +661,28 @@ class Cardinal(object):
                 logger.debug("TRACEBACK", exc_info=True)
             try:
                 self.telegram.edit_bot()
-            except AttributeError:  # todo убрать когда-то
-                logger.warning("Произошла ошибка при изменении бота Telegram. Обновляю библиотеку...")
-                logger.debug("TRACEBACK", exc_info=True)
-                try:
-                    main(["install", "-U", "pytelegrambotapi==4.15.2"])
-                    logger.info("Библиотека обновлена.")
-                except:
-                    logger.warning("Произошла ошибка при обновлении библиотеки.")
-                    logger.debug("TRACEBACK", exc_info=True)
-            except:
+            except Exception:
                 logger.warning("Произошла ошибка при изменении бота Telegram.")
                 logger.debug("TRACEBACK", exc_info=True)
 
             Thread(target=self.telegram.run, daemon=True).start()
 
         self.__init_account()
-        self.runner = FunPayAPI.Runner(self.account, self.old_mode_enabled)
-        self.__update_profile()
+        if getattr(self.account, "golden_key", None) and (getattr(self.account, "is_authorized", False) or getattr(self.account, "id", None)):
+            self.runner = FunPayAPI.Runner(self.account, self.old_mode_enabled)
+            self.__update_profile()
+        else:
+            self.runner = None
+            logger.info("FunPay Runner ожидает настройки Golden Key через Mini App.")
+
         self.run_handlers(self.post_init_handlers, (self,))
 
-        # Carnaval Mini App (опционально)
+        # Carnaval Mini App (встроенный сервис)
         try:
-            if self.MAIN_CFG.getboolean("Carnaval", "enabled", fallback=False):
+            if self.MAIN_CFG.getboolean("Carnaval", "enabled", fallback=True):
                 from carnaval.server import start as _carnaval_start
-                _host = self.MAIN_CFG.get("Carnaval", "host", fallback="127.0.0.1")
-                _port = int(self.MAIN_CFG.get("Carnaval", "port", fallback="8765"))
+                _host = self.MAIN_CFG.get("Carnaval", "host", fallback="0.0.0.0")
+                _port = int(os.getenv("PORT") or self.MAIN_CFG.get("Carnaval", "port", fallback="8000"))
                 _carnaval_start(self, _host, _port)
         except Exception:
             logger.warning("Carnaval: ошибка при запуске Mini App сервера")
@@ -692,18 +690,48 @@ class Cardinal(object):
 
         return self
 
+    def reinit_account(self) -> bool:
+        """Повторная инициализация аккаунта после настройки Golden Key в Mini App."""
+        try:
+            from carnaval.secrets_manager import SecretManager
+            g_key = SecretManager.get_secret("golden_key") or self.MAIN_CFG["FunPay"].get("golden_key", "").strip()
+        except Exception:
+            g_key = self.MAIN_CFG["FunPay"].get("golden_key", "").strip()
+
+        if not g_key:
+            return False
+
+        self.account.golden_key = g_key
+        try:
+            self.account.get()
+            self.balance = self.get_balance()
+            if self.runner is None:
+                self.runner = FunPayAPI.Runner(self.account, self.old_mode_enabled)
+                Thread(target=self.runner.loop, daemon=True).start()
+                Thread(target=self.lots_raise_loop, daemon=True).start()
+                Thread(target=self.update_session_loop, daemon=True).start()
+            self.__update_profile()
+            logger.info(f"FunPay: аккаунт {self.account.username} успешно активирован!")
+            return True
+        except Exception as e:
+            logger.error(f"FunPay: ошибка подключения аккаунта: {e}")
+            return False
+
     def run(self):
         """
         Запускает кардинал после инициализации. Используется для первого старта.
         """
         self.run_id += 1
         self.start_time = int(time.time())
-        Thread(target=self.runner.loop, daemon=True).start()
+        if self.runner is not None:
+            Thread(target=self.runner.loop, daemon=True).start()
+            Thread(target=self.lots_raise_loop, daemon=True).start()
+            Thread(target=self.update_session_loop, daemon=True).start()
+        else:
+            logger.info("FunPay циклы будут запущены автоматически после ввода Golden Key в Mini App.")
+
         self.run_handlers(self.pre_start_handlers, (self,))
         self.run_handlers(self.post_start_handlers, (self,))
-
-        Thread(target=self.lots_raise_loop, daemon=True).start()
-        Thread(target=self.update_session_loop, daemon=True).start()
         self.process_events()
 
     def start(self):

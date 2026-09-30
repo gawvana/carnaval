@@ -71,6 +71,9 @@ export async function request(method, path, options = {}) {
   const token = getToken();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+    if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(method.toUpperCase())) {
+      headers['X-CSRF-Token'] = token;
+    }
   }
 
   let body = undefined;
@@ -96,12 +99,13 @@ export async function request(method, path, options = {}) {
       method,
       headers,
       body,
+      credentials: 'same-origin',
       signal: controller.signal,
     });
     clearTimeout(timer);
 
     // 1. Проверка на 401 Unauthorized и попытка авто-релогина
-    if (res.status === 401 && allowRelogin && !isRelogging && tg && tg.initData && path !== '/api/auth') {
+    if (res.status === 401 && allowRelogin && !isRelogging && tg && tg.initData && !path.startsWith('/api/auth')) {
       isRelogging = true;
       try {
         console.warn('[API] 401 получен — попытка авто-релогина...');
@@ -135,6 +139,12 @@ export async function request(method, path, options = {}) {
         }
       } catch {}
 
+      if (res.status === 403 && (errCode === 'panel_locked' || (typeof errMessage === 'string' && errMessage.includes('пароль')))) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('carnaval:panel_locked'));
+        }
+      }
+
       throw new ApiError(res.status, errCode, errMessage, errData);
     }
 
@@ -167,19 +177,79 @@ export async function request(method, path, options = {}) {
 
 export async function auth(initData) {
   try {
-    const data = await request('POST', '/api/auth', {
-      json: { initData: initData || '' },
+    const data = await request('POST', '/api/auth/telegram', {
+      json: { init_data: initData || '' },
       allowRelogin: false,
     });
-    if (data && data.token) {
-      setToken(data.token);
-      return true;
+    if (data && (data.token || data.csrf_token)) {
+      setToken(data.token || data.csrf_token);
+      return data;
     }
     return false;
   } catch (e) {
     console.error('[API] Ошибка auth:', e);
     return false;
   }
+}
+
+export async function panelUnlock(password) {
+  return await request('POST', '/api/auth/panel-unlock', {
+    json: { password },
+  });
+}
+
+export async function getAuthMe() {
+  return await request('GET', '/api/auth/me');
+}
+
+export async function logout() {
+  try {
+    await request('POST', '/api/auth/logout');
+  } finally {
+    setToken('');
+  }
+}
+
+export async function logoutAll() {
+  try {
+    return await request('POST', '/api/auth/logout-all');
+  } finally {
+    setToken('');
+  }
+}
+
+export async function getActiveSessions() {
+  return await request('GET', '/api/auth/sessions');
+}
+
+export async function changePassword(old_password, new_password) {
+  return await request('POST', '/api/auth/change-password', {
+    json: { old_password, new_password },
+  });
+}
+
+export async function getSetupStatus() {
+  return await request('GET', '/api/setup/status');
+}
+
+export async function claimSetup() {
+  return await request('POST', '/api/setup/claim');
+}
+
+export async function setupPassword(password) {
+  return await request('POST', '/api/setup/password', {
+    json: { password },
+  });
+}
+
+export async function setupGoldenKey(golden_key) {
+  return await request('POST', '/api/setup/golden-key', {
+    json: { golden_key },
+  });
+}
+
+export async function finalizeSetup() {
+  return await request('POST', '/api/setup/finalize');
 }
 
 export async function getMe() {
@@ -443,6 +513,14 @@ export async function getAccountInfo() {
 
 export async function changeGoldenKey(new_key, confirm = false) {
   return await request('POST', '/api/more/account/golden-key', { json: { new_key, confirm } });
+}
+
+export async function deleteGoldenKey(confirm = true) {
+  return await request('DELETE', `/api/more/account/golden-key?confirm=${Boolean(confirm)}`);
+}
+
+export async function getAuditLogs(limit = 100) {
+  return await request('GET', `/api/more/audit-logs?limit=${encodeURIComponent(limit)}`);
 }
 
 export async function getLogs(n = 150) {

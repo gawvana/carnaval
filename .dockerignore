@@ -13,8 +13,14 @@ storage/
 configs/
 logs/
 plugins/
+data/
 *.key
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 carnaval_secret.key
+master.key
 node_modules/
 .vercel/
 carnaval/web/js/runtime-config.js

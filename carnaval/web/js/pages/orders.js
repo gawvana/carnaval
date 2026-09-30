@@ -10,6 +10,7 @@ import { tg } from '../tg.js';
 import { renderHeader } from '../ui/header.js';
 import { openSheet, closeSheet, openConfirmSheet } from '../ui/sheet.js';
 import { showToast } from '../ui/toast.js';
+import { escapeHtml } from '../ui/sanitize.js';
 
 let _currentStatus = null;
 let _nextOrderId = null;
@@ -138,27 +139,33 @@ async function loadOrders(isRefresh = false) {
 
 function renderOrderCardHTML(o) {
   const statusInfo = getStatusDisplay(o.status);
+  const safeId = escapeHtml(o.id);
+  const safePrice = escapeHtml(o.price);
+  const safeCurrency = escapeHtml(o.currency);
+  const safeDesc = escapeHtml(o.description || 'Без описания');
+  const safeBuyer = escapeHtml(o.buyer_username);
+  const safeSubcat = escapeHtml(o.subcategory_name || '');
   return `
-    <button class="card n press order-card-btn rv in" data-id="${o.id}" style="height:auto; min-height:100px; padding:16px; text-align:left; width:100%">
+    <button class="card n press order-card-btn rv in" data-id="${safeId}" style="height:auto; min-height:100px; padding:16px; text-align:left; width:100%">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; width:100%">
         <div>
           <span style="display:inline-block; padding:3px 8px; border-radius:8px; font-size:11px; font-weight:700; background:${statusInfo.bg}; color:${statusInfo.color}">
             ${statusInfo.label}
           </span>
-          <b style="font-size:15px; margin-left:6px">#${o.id}</b>
+          <b style="font-size:15px; margin-left:6px">#${safeId}</b>
         </div>
         <div style="font-size:16px; font-weight:800; color:var(--primary)">
-          ${o.price} ${o.currency}
+          ${safePrice} ${safeCurrency}
         </div>
       </div>
 
       <div style="margin: 8px 0; font-size:13px; font-weight:600; color:var(--on); overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical">
-        ${o.description || 'Без описания'}
+        ${safeDesc}
       </div>
 
       <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted)">
-        <span>Покупатель: <b>${o.buyer_username}</b></span>
-        <span>${o.subcategory_name || ''}</span>
+        <span>Покупатель: <b>${safeBuyer}</b></span>
+        <span>${safeSubcat}</span>
       </div>
     </button>
   `;
@@ -178,19 +185,24 @@ async function openOrderDetailsModal(orderId) {
     if (!o) throw new Error('Заказ не найден');
 
     const statusInfo = getStatusDisplay(o.status);
+    const safeSum = escapeHtml(o.sum);
+    const safeCurrency = escapeHtml(o.currency);
+    const safeBuyer = escapeHtml(o.buyer_username);
+    const safeAmount = escapeHtml(o.amount);
+    const safeSubcategory = escapeHtml(o.subcategory || '');
 
     const sheetContent = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px">
         <span style="padding:4px 10px; border-radius:10px; font-size:12px; font-weight:700; background:${statusInfo.bg}; color:${statusInfo.color}">
           ${statusInfo.label}
         </span>
-        <b style="font-size:22px; color:var(--primary)">${o.sum} ${o.currency}</b>
+        <b style="font-size:22px; color:var(--primary)">${safeSum} ${safeCurrency}</b>
       </div>
 
       <div class="panel" style="padding:14px; margin-bottom:14px">
-        <div class="row"><span>Покупатель</span><b>${o.buyer_username}</b></div>
-        <div class="row"><span>Количество</span><b>${o.amount} шт.</b></div>
-        ${o.subcategory ? `<div class="row"><span>Категория</span><b>${o.subcategory}</b></div>` : ''}
+        <div class="row"><span>Покупатель</span><b>${safeBuyer}</b></div>
+        <div class="row"><span>Количество</span><b>${safeAmount} шт.</b></div>
+        ${safeSubcategory ? `<div class="row"><span>Категория</span><b>${safeSubcategory}</b></div>` : ''}
       </div>
 
       <!-- Поля заказа -->
@@ -199,8 +211,8 @@ async function openOrderDetailsModal(orderId) {
         <div class="panel" style="padding:14px; margin-bottom:14px; font-size:13px">
           ${Object.values(o.fields).map(f => `
             <div style="margin-bottom:6px">
-              <span style="color:var(--muted)">${f.name}:</span>
-              <b>${f.value}</b>
+              <span style="color:var(--muted)">${escapeHtml(f.name)}:</span>
+              <b>${escapeHtml(f.value)}</b>
             </div>
           `).join('')}
         </div>
@@ -210,7 +222,7 @@ async function openOrderDetailsModal(orderId) {
       ${(o.order_secrets || []).length > 0 ? `
         <h4 style="font-size:13px; color:var(--muted); margin:12px 4px 6px">Выданный товар</h4>
         <div class="panel" style="padding:14px; margin-bottom:14px; background:var(--s); color:var(--on-s); font-family:monospace; font-size:12px; white-space:pre-wrap; word-break:break-all">
-          ${o.order_secrets.join('\n')}
+          ${escapeHtml(o.order_secrets.join('\n'))}
         </div>
       ` : ''}
 
@@ -218,12 +230,12 @@ async function openOrderDetailsModal(orderId) {
       ${o.review ? `
         <h4 style="font-size:13px; color:var(--muted); margin:12px 4px 6px">Отзыв покупателя</h4>
         <div class="panel" style="padding:14px; margin-bottom:14px">
-          <div>${'⭐'.repeat(o.review.stars || 5)}</div>
-          <div style="font-size:13px; margin:4px 0">${o.review.text || 'Без текста'}</div>
+          <div>${'⭐'.repeat(Math.min(5, Math.max(1, o.review.stars || 5)))}</div>
+          <div style="font-size:13px; margin:4px 0">${escapeHtml(o.review.text || 'Без текста')}</div>
           ${o.review.reply ? `
             <div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--track); font-size:12px">
               <b style="color:var(--muted)">Ваш ответ:</b>
-              <p>${o.review.reply}</p>
+              <p>${escapeHtml(o.review.reply)}</p>
             </div>
           ` : ''}
         </div>

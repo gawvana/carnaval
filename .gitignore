@@ -28,7 +28,10 @@ storage/
 configs/
 logs/
 plugins/
+data/
 *.key
+*.db
+*.sqlite
 carnaval_secret.key
 
 # Environment files

@@ -476,35 +476,60 @@ def remove_authorized_user(user_id: int) -> tuple[bool, str]:
 def get_account_info() -> dict[str, Any]:
     """Возвращает маскированную информацию об аккаунте FunPay."""
     cardinal = get_cardinal()
-    acc = cardinal.account
+    acc = getattr(cardinal, "account", None)
 
     username = getattr(acc, "username", None) or ""
     user_id = getattr(acc, "id", None) or 0
-    golden_key = getattr(acc, "golden_key", "") or ""
+    from carnaval.secrets_manager import SecretManager
+    has_key = SecretManager.has_secret("golden_key") or bool(getattr(acc, "golden_key", ""))
 
     return {
         "username": username,
         "id": user_id,
-        "golden_key": mask_secret(golden_key, 4, 4),
+        "golden_key_configured": has_key,
+        "golden_key_masked": "••••••••••••••••" if has_key else "",
     }
 
 
 def change_golden_key(new_key: str, confirm: bool = False) -> tuple[bool, str]:
-    """Меняет golden_key. Требует confirm=True."""
+    """Меняет golden_key через SecretManager. Требует confirm=True."""
     if not confirm:
         return False, "Требуется подтверждение (confirm=true)"
-    new_key = new_key.strip()
-    if not new_key:
-        return False, "golden_key не может быть пустым"
+    clean_key = new_key.strip()
+    if len(clean_key) != 32:
+        return False, "Golden Key должен состоять ровно из 32 символов"
+
+    from carnaval.secrets_manager import SecretManager
+    SecretManager.set_secret("golden_key", clean_key)
 
     cardinal = get_cardinal()
-    cardinal.MAIN_CFG["FunPay"]["golden_key"] = new_key
-    try:
-        cardinal.save_config(cardinal.MAIN_CFG, "configs/_main.cfg")
-        # Применяем к аккаунту без перезапуска
-        cardinal.account.golden_key = new_key
-    except Exception as e:
-        return False, str(e)
+    if hasattr(cardinal, "account") and cardinal.account:
+        cardinal.account.golden_key = clean_key
+    if hasattr(cardinal, "MAIN_CFG") and "FunPay" in cardinal.MAIN_CFG:
+        cardinal.MAIN_CFG["FunPay"]["golden_key"] = clean_key
+        try:
+            cardinal.save_config(cardinal.MAIN_CFG, "configs/_main.cfg")
+        except Exception:
+            pass
+    return True, ""
+
+
+def delete_golden_key(confirm: bool = False) -> tuple[bool, str]:
+    """Удаляет golden_key из SecretManager. Требует confirm=True."""
+    if not confirm:
+        return False, "Требуется подтверждение (confirm=true)"
+    from carnaval.secrets_manager import SecretManager
+    SecretManager.delete_secret("golden_key")
+
+    cardinal = get_cardinal()
+    if hasattr(cardinal, "account") and cardinal.account:
+        cardinal.account.golden_key = ""
+    if hasattr(cardinal, "MAIN_CFG") and "FunPay" in cardinal.MAIN_CFG:
+        cardinal.MAIN_CFG["FunPay"]["golden_key"] = ""
+        try:
+            cardinal.save_config(cardinal.MAIN_CFG, "configs/_main.cfg")
+        except Exception:
+            pass
     return True, ""
 
 
@@ -569,40 +594,85 @@ def clear_logs() -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 def create_configs_backup() -> bytes:
-    """Создаёт zip-архив директории configs/ и возвращает байты."""
+    """
+    Создаёт zip-архив безопасных файлов конфигурации.
+    Строгий whitelist:
+    - configs/ (кроме *.key, *.secret, *.pem, master.key, .env)
+    - storage/products/
+    НЕ включает master.key, carnaval_secret.key, sessions, .env, токены.
+    """
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         configs_dir = "configs"
         if os.path.isdir(configs_dir):
             for root, _dirs, files in os.walk(configs_dir):
                 for fname in files:
+                    lower = fname.lower()
+                    if lower.endswith((".key", ".secret", ".pem")) or "master" in lower or ".env" in lower:
+                        continue
                     fpath = os.path.join(root, fname)
                     arcname = os.path.relpath(fpath, start=".")
                     zf.write(fpath, arcname)
-        # Добавляем storage/cache если есть
-        cache_dir = os.path.join("storage", "cache")
-        if os.path.isdir(cache_dir):
-            for fname in os.listdir(cache_dir):
-                fpath = os.path.join(cache_dir, fname)
-                if os.path.isfile(fpath):
-                    zf.write(fpath, os.path.join("storage", "cache", fname))
+
+        # Добавляем storage/products (товары автовыдачи)
+        products_dir = os.path.join("storage", "products")
+        if os.path.isdir(products_dir):
+            for root, _dirs, files in os.walk(products_dir):
+                for fname in files:
+                    lower = fname.lower()
+                    if lower.endswith((".key", ".secret", ".pem")):
+                        continue
+                    fpath = os.path.join(root, fname)
+                    arcname = os.path.relpath(fpath, start=".")
+                    zf.write(fpath, arcname)
     buf.seek(0)
     return buf.read()
 
 
+def create_backup(target: Any = None) -> tuple[bool, str] | bytes:
+    """Создаёт резервную копию конфигурации без секретов."""
+    try:
+        data = create_configs_backup()
+        if target is not None:
+            if hasattr(target, "write"):
+                target.write(data)
+            return True, ""
+        return data
+    except Exception as e:
+        if target is not None:
+            return False, str(e)
+        raise
+
+
 def restore_backup(zip_bytes: bytes) -> tuple[bool, str]:
-    """Безопасно распаковывает архив с конфигурацией."""
+    """
+    Безопасно валидирует и распаковывает архив с конфигурацией.
+    Защита:
+    - Zip Slip / Path Traversal
+    - Zip Bomb (лимит по числу файлов и суммарному размеру)
+    - Запрет симлинков
+    - Игнорирование любых потенциальных файлов секретов
+    """
     try:
         buf = io.BytesIO(zip_bytes)
         with zipfile.ZipFile(buf, "r") as zf:
+            from carnaval.security_utils import validate_zip_archive
+            validate_zip_archive(zf, ".")
+
             for member in zf.namelist():
-                # Безопасность: никаких абсолютных путей или ..
+                lower = member.lower()
+                if lower.endswith((".key", ".secret", ".pem")) or "master" in lower or ".env" in lower or "app.db" in lower:
+                    continue
                 if member.startswith("/") or ".." in member:
                     continue
-                if member.startswith("configs/") or member.startswith("storage/cache/"):
+
+                if member.startswith("configs/") or member.startswith("storage/products/"):
                     zf.extract(member, path=".")
+
         return True, ""
     except Exception as e:
+        logger.error(f"Carnaval.More: ошибка восстановления бэкапа: {e}")
+        return False, f"Ошибка восстановления: {e}"
         return False, str(e)
 
 
