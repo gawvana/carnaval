@@ -72,6 +72,9 @@ async def lifespan(app: FastAPI):
     init_db()
     install_log_sanitizer()
 
+    from carnaval.secrets_manager import SecretManager
+    SecretManager.migrate_legacy_env_secrets()
+
     bridge.set_loop(asyncio.get_event_loop())
     logger.info("Carnaval: SSE bridge ready, security systems initialized")
     yield

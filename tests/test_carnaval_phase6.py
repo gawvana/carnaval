@@ -210,7 +210,7 @@ def test_set_allowed_origins_logic():
 
 
 def test_config_js_and_vercel_files_exist():
-    """Файлы config.js, scripts/gen-config.mjs и vercel.json присутствуют; serverless proxy удален."""
+    """Файлы config.js, scripts/build-vercel.mjs и vercel.json присутствуют; serverless proxy удален."""
     base = os.path.join(os.path.dirname(__file__), "..")
 
     config_js = os.path.normpath(os.path.join(base, "carnaval", "web", "js", "config.js"))
@@ -222,14 +222,17 @@ def test_config_js_and_vercel_files_exist():
     assert "getApiBase" in content, "config.js must export getApiBase()"
     assert "apiUrl" in content, "config.js must export apiUrl()"
 
-    # Проверяем, что в архитектуре Infrlo single-origin vercel.json удален
+    # Проверяем, что vercel.json существует и настраивает external rewrite для /api/*
     vercel_json = os.path.normpath(os.path.join(base, "vercel.json"))
-    assert not os.path.exists(vercel_json), f"vercel.json must NOT exist in single-origin setup: {vercel_json}"
+    assert os.path.exists(vercel_json), f"vercel.json must exist for Vercel deployment: {vercel_json}"
+    with open(vercel_json, encoding="utf-8") as f:
+        v_data = f.read()
+    assert "/api/:path*" in v_data, "vercel.json must contain rewrite rule for /api/:path*"
 
     # Проверяем, что serverless proxy api/[...path].js удален
     proxy_js = os.path.normpath(os.path.join(base, "api", "[...path].js"))
     assert not os.path.exists(proxy_js), f"api/[...path].js should be deleted: {proxy_js}"
 
-    # Проверяем, что Vercel скрипт gen-config.mjs удален
-    gen_script = os.path.normpath(os.path.join(base, "scripts", "gen-config.mjs"))
-    assert not os.path.exists(gen_script), f"scripts/gen-config.mjs must be deleted: {gen_script}"
+    # Проверяем наличие build-vercel.mjs
+    build_script = os.path.normpath(os.path.join(base, "scripts", "build-vercel.mjs"))
+    assert os.path.exists(build_script), f"scripts/build-vercel.mjs must exist: {build_script}"

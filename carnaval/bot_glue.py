@@ -53,7 +53,7 @@ def create_menu_keyboard(public_url: str) -> types.InlineKeyboardMarkup:
     web_app = types.WebAppInfo(url=public_url)
 
     btn_app = types.InlineKeyboardButton(
-        text="Открыть Carnaval",
+        text="Открыть панель",
         web_app=web_app,
         icon_custom_emoji_id=APP_EMOJI_ID,
     )

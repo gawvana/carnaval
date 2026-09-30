@@ -172,10 +172,18 @@ def validate_zip_archive(archive: Any, dest_dir: str = "", max_uncompressed_byte
     - Защита от Zip Bomb (превышение макс. числа файлов или размера)
     - Запрет симлинков
     """
-    if isinstance(archive, bytes):
-        zf = zipfile.ZipFile(io.BytesIO(archive), "r")
+    if isinstance(archive, (bytes, bytearray)):
+        if len(archive) > max_uncompressed_bytes:
+            raise ZipValidationError(f"Размер архива превышает допустимый лимит {max_uncompressed_bytes // 1024 // 1024}MB")
+        try:
+            zf = zipfile.ZipFile(io.BytesIO(archive), "r")
+        except zipfile.BadZipFile as e:
+            raise ZipValidationError(f"Некорректный ZIP архив: {e}")
     elif isinstance(archive, io.BytesIO):
-        zf = zipfile.ZipFile(archive, "r")
+        try:
+            zf = zipfile.ZipFile(archive, "r")
+        except zipfile.BadZipFile as e:
+            raise ZipValidationError(f"Некорректный ZIP архив: {e}")
     else:
         zf = archive
 

@@ -127,18 +127,8 @@ async def telegram_auth(req: TelegramAuthRequest, request: Request, response: Re
     session_token = auth.create_session(telegram_user_id, ip, user_agent)
 
     # Устанавливаем HttpOnly cookie
-    is_secure = request.url.scheme == "https" or os.getenv("CARNAVAL_TRUST_PROXY", "0") == "1"
-    response.set_cookie(
-        key="carnaval_session",
-        value=session_token,
-        max_age=auth.SESSION_TTL,
-        httponly=True,
-        secure=is_secure,
-        samesite="lax",
-        path="/",
-    )
-
-    return JSONResponse({
+    is_secure = request.url.scheme == "https" or os.getenv("CARNAVAL_TRUST_PROXY", "0") == "1" or request.headers.get("x-forwarded-proto") == "https"
+    res = JSONResponse({
         "status": "ok",
         "token": session_token,
         "csrf_token": session_token,
@@ -147,6 +137,16 @@ async def telegram_auth(req: TelegramAuthRequest, request: Request, response: Re
         "username": username,
         "system_state": state,
     })
+    res.set_cookie(
+        key="carnaval_session",
+        value=session_token,
+        max_age=auth.SESSION_TTL,
+        httponly=True,
+        secure=is_secure,
+        samesite="lax",
+        path="/",
+    )
+    return res
 
 
 @router.post("/auth/panel-unlock")
@@ -223,11 +223,13 @@ async def get_current_user_info(request: Request, session: dict = Depends(requir
 @router.post("/auth/logout")
 async def logout(request: Request, response: Response, session: dict = Depends(require_telegram_auth)) -> JSONResponse:
     """Завершение текущей сессии."""
-    token = request.state.session_token
-    auth.revoke_session(token)
-    response.delete_cookie("carnaval_session", path="/")
+    token = getattr(request.state, "session_token", None) or extract_session_token(request)
+    if token:
+        auth.revoke_session(token)
     log_audit("logout", session["telegram_user_id"], request.client.host if request.client else "")
-    return JSONResponse({"status": "ok", "message": "Сессия завершена"})
+    res = JSONResponse({"status": "ok", "message": "Сессия завершена"})
+    res.delete_cookie("carnaval_session", path="/")
+    return res
 
 
 @router.post("/auth/logout-all")
@@ -235,9 +237,10 @@ async def logout_all(request: Request, response: Response, session: dict = Depen
     """Завершение всех сессий на всех устройствах."""
     uid = session["telegram_user_id"]
     count = auth.revoke_all_user_sessions(uid)
-    response.delete_cookie("carnaval_session", path="/")
     log_audit("logout_all", uid, request.client.host if request.client else "", f"Отозвано сессий: {count}")
-    return JSONResponse({"status": "ok", "revoked_count": count})
+    res = JSONResponse({"status": "ok", "revoked_count": count})
+    res.delete_cookie("carnaval_session", path="/")
+    return res
 
 
 @router.get("/auth/sessions")

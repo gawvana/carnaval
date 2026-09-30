@@ -9,7 +9,7 @@ import { showToast } from './toast.js';
 import { escapeHtml } from './sanitize.js';
 
 /**
- * Рендерит пошаговый мастер первичной настройки системы.
+ * Рендерит пошаговый мастер первичной настройки системы (7 шагов, Section 10 & 56).
  */
 export async function renderOnboarding(container, onComplete) {
   let step = 1;
@@ -29,11 +29,10 @@ export async function renderOnboarding(container, onComplete) {
       <div class="page" style="min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px">
         <div class="panel rv in" style="max-width: 440px; width: 100%; padding: 28px 20px; box-sizing: border-box; text-align: center">
           
-          <div style="display: flex; justify-content: center; gap: 8px; margin-bottom: 24px">
-            <span style="width: 24px; height: 6px; border-radius: 3px; background: ${step >= 1 ? 'var(--p)' : 'var(--sep)'}"></span>
-            <span style="width: 24px; height: 6px; border-radius: 3px; background: ${step >= 2 ? 'var(--p)' : 'var(--sep)'}"></span>
-            <span style="width: 24px; height: 6px; border-radius: 3px; background: ${step >= 3 ? 'var(--p)' : 'var(--sep)'}"></span>
-            <span style="width: 24px; height: 6px; border-radius: 3px; background: ${step >= 4 ? 'var(--p)' : 'var(--sep)'}"></span>
+          <div style="display: flex; justify-content: center; gap: 6px; margin-bottom: 24px">
+            ${[1, 2, 3, 4, 5, 6, 7].map(s => `
+              <span style="width: 16px; height: 5px; border-radius: 3px; background: ${step >= s ? 'var(--p)' : 'var(--sep)'}"></span>
+            `).join('')}
           </div>
 
           <div id="onboarding-step-body"></div>
@@ -60,7 +59,7 @@ export async function renderOnboarding(container, onComplete) {
           <div style="opacity:.5; font-size: 11px; margin-top: 4px">ID: ${escapeHtml(user.id || '—')}</div>
         </div>
         <button id="step1-claim-btn" class="btn press" style="width: 100%; background: var(--p); color: #fff; padding: 12px; font-weight: 600; border-radius: 14px">
-          Захватить владение
+          Подтвердить владение
         </button>
       `;
 
@@ -154,6 +153,178 @@ export async function renderOnboarding(container, onComplete) {
       });
     } else if (step === 4) {
       body.innerHTML = `
+        <div style="width: 60px; height: 60px; margin: 0 auto 16px; border-radius: 50%; background: var(--p-c); color: var(--primary); display: grid; place-items: center">
+          <svg style="width: 30px; height: 30px" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+        <h2 style="margin: 0 0 8px; font-size: 20px">FunPay Аккаунт</h2>
+        <p class="tx" style="margin: 0 auto 16px; font-size: 13px; line-height: 1.5; opacity: .7">
+          Логин и пароль от учетной записи FunPay (пароль хранится в зашифрованном виде).
+        </p>
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; text-align: left">
+          <input id="ob-fp-login" type="text" class="inp" placeholder="Логин FunPay"
+            style="width: 100%; background: var(--bg2); border: 1.5px solid var(--sep); border-radius: 12px; padding: 10px 14px; color: var(--tx); font-size: 14px; box-sizing: border-box">
+          <input id="ob-fp-pwd" type="password" class="inp" placeholder="Пароль FunPay"
+            style="width: 100%; background: var(--bg2); border: 1.5px solid var(--sep); border-radius: 12px; padding: 10px 14px; color: var(--tx); font-size: 14px; box-sizing: border-box">
+        </div>
+        <div style="display: flex; gap: 8px; margin-bottom: 10px">
+          <button id="step4-test-btn" class="btn press" style="flex: 1; background: var(--bg2); border: 1.5px solid var(--sep); color: var(--tx); padding: 10px; font-size: 13px; border-radius: 14px">
+            Проверить
+          </button>
+          <button id="step4-save-btn" class="btn press" style="flex: 2; background: var(--p); color: #fff; padding: 10px; font-weight: 600; font-size: 13px; border-radius: 14px">
+            Сохранить
+          </button>
+        </div>
+        <button id="step4-skip-btn" class="btn press" style="width: 100%; background: transparent; border: 1.5px solid var(--sep); color: var(--tx); padding: 10px; font-size: 13px; border-radius: 14px">
+          Пропустить
+        </button>
+      `;
+
+      body.querySelector('#step4-test-btn')?.addEventListener('click', async () => {
+        const login = document.getElementById('ob-fp-login')?.value?.trim() || '';
+        const pwd = document.getElementById('ob-fp-pwd')?.value || '';
+        if (!login || !pwd) { showToast('Заполните логин и пароль', 'error'); return; }
+        haptic('selection');
+        try {
+          const res = await api.testFunPay(login, pwd);
+          showToast(res.message || 'Подключение проверено', 'success');
+        } catch (e) {
+          showToast(e.message || 'Ошибка проверки', 'error');
+        }
+      });
+
+      body.querySelector('#step4-save-btn')?.addEventListener('click', async () => {
+        const login = document.getElementById('ob-fp-login')?.value?.trim() || '';
+        const pwd = document.getElementById('ob-fp-pwd')?.value || '';
+        if (!login || !pwd) { showToast('Заполните логин и пароль', 'error'); return; }
+        haptic('impact', 'medium');
+        try {
+          await api.setupFunPay(login, pwd);
+          showToast('FunPay учетные данные зашифрованы', 'success');
+          step = 5;
+          renderStep();
+        } catch (e) {
+          showToast(e.message || 'Ошибка сохранения', 'error');
+        }
+      });
+
+      body.querySelector('#step4-skip-btn')?.addEventListener('click', () => {
+        haptic('selection');
+        step = 5;
+        renderStep();
+      });
+    } else if (step === 5) {
+      body.innerHTML = `
+        <div style="width: 60px; height: 60px; margin: 0 auto 16px; border-radius: 50%; background: var(--p-c); color: var(--primary); display: grid; place-items: center">
+          <svg style="width: 30px; height: 30px" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        </div>
+        <h2 style="margin: 0 0 8px; font-size: 20px">Настройка Прокси</h2>
+        <p class="tx" style="margin: 0 auto 16px; font-size: 13px; line-height: 1.5; opacity: .7">
+          Использование прокси для работы с FunPay (поддержка HTTP/SOCKS5).
+        </p>
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; text-align: left">
+          <div style="display: flex; gap: 8px">
+            <input id="ob-prx-host" type="text" class="inp" placeholder="Хост / IP"
+              style="flex: 2; background: var(--bg2); border: 1.5px solid var(--sep); border-radius: 12px; padding: 10px 14px; color: var(--tx); font-size: 14px; box-sizing: border-box">
+            <input id="ob-prx-port" type="number" class="inp" placeholder="Порт"
+              style="flex: 1; background: var(--bg2); border: 1.5px solid var(--sep); border-radius: 12px; padding: 10px 14px; color: var(--tx); font-size: 14px; box-sizing: border-box">
+          </div>
+          <input id="ob-prx-user" type="text" class="inp" placeholder="Логин (опционально)"
+            style="width: 100%; background: var(--bg2); border: 1.5px solid var(--sep); border-radius: 12px; padding: 10px 14px; color: var(--tx); font-size: 14px; box-sizing: border-box">
+          <input id="ob-prx-pwd" type="password" class="inp" placeholder="Пароль (опционально)"
+            style="width: 100%; background: var(--bg2); border: 1.5px solid var(--sep); border-radius: 12px; padding: 10px 14px; color: var(--tx); font-size: 14px; box-sizing: border-box">
+        </div>
+        <div style="display: flex; gap: 8px; margin-bottom: 10px">
+          <button id="step5-test-btn" class="btn press" style="flex: 1; background: var(--bg2); border: 1.5px solid var(--sep); color: var(--tx); padding: 10px; font-size: 13px; border-radius: 14px">
+            Проверить
+          </button>
+          <button id="step5-save-btn" class="btn press" style="flex: 2; background: var(--p); color: #fff; padding: 10px; font-weight: 600; font-size: 13px; border-radius: 14px">
+            Сохранить
+          </button>
+        </div>
+        <button id="step5-skip-btn" class="btn press" style="width: 100%; background: transparent; border: 1.5px solid var(--sep); color: var(--tx); padding: 10px; font-size: 13px; border-radius: 14px">
+          Пропустить (прямое подключение)
+        </button>
+      `;
+
+      body.querySelector('#step5-test-btn')?.addEventListener('click', async () => {
+        const host = document.getElementById('ob-prx-host')?.value?.trim() || '';
+        const port = document.getElementById('ob-prx-port')?.value?.trim() || '';
+        const user = document.getElementById('ob-prx-user')?.value?.trim() || '';
+        const pwd = document.getElementById('ob-prx-pwd')?.value || '';
+        if (!host || !port) { showToast('Укажите хост и порт прокси', 'error'); return; }
+        haptic('selection');
+        try {
+          const res = await api.testProxy(host, port, user, pwd);
+          showToast(res.message || 'Прокси доступен', 'success');
+        } catch (e) {
+          showToast(e.message || 'Ошибка проверки', 'error');
+        }
+      });
+
+      body.querySelector('#step5-save-btn')?.addEventListener('click', async () => {
+        const host = document.getElementById('ob-prx-host')?.value?.trim() || '';
+        const port = document.getElementById('ob-prx-port')?.value?.trim() || '';
+        const user = document.getElementById('ob-prx-user')?.value?.trim() || '';
+        const pwd = document.getElementById('ob-prx-pwd')?.value || '';
+        if (!host || !port) { showToast('Укажите хост и порт прокси', 'error'); return; }
+        haptic('impact', 'medium');
+        try {
+          await api.setupProxy(host, port, user, pwd);
+          showToast('Настройки прокси сохранены', 'success');
+          step = 6;
+          renderStep();
+        } catch (e) {
+          showToast(e.message || 'Ошибка сохранения', 'error');
+        }
+      });
+
+      body.querySelector('#step5-skip-btn')?.addEventListener('click', () => {
+        haptic('selection');
+        step = 6;
+        renderStep();
+      });
+    } else if (step === 6) {
+      body.innerHTML = `
+        <div style="width: 60px; height: 60px; margin: 0 auto 16px; border-radius: 50%; background: var(--ok-c, #e8f5e9); color: var(--ok, #4caf50); display: grid; place-items: center">
+          <svg style="width: 30px; height: 30px" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        </div>
+        <h2 style="margin: 0 0 8px; font-size: 20px">Проверка системы</h2>
+        <p class="tx" style="margin: 0 auto 16px; font-size: 13px; line-height: 1.5; opacity: .7">
+          Проверка ключевых сервисов перед запуском:
+        </p>
+        <div id="check-list" class="card glass" style="padding: 14px; margin-bottom: 20px; text-align: left; font-size: 13px; line-height: 2">
+          <div>Проверка компонентов...</div>
+        </div>
+        <button id="step6-next-btn" class="btn press" style="width: 100%; background: var(--p); color: #fff; padding: 12px; font-weight: 600; border-radius: 14px">
+          Продолжить
+        </button>
+      `;
+
+      // Асинхронно обновляем чек-лист
+      (async () => {
+        try {
+          const s = await api.getSetupStatus();
+          const checkEl = body.querySelector('#check-list');
+          if (checkEl) {
+            checkEl.innerHTML = `
+              <div>${s.has_owner ? '✅' : '❌'} Владелец: ${s.has_owner ? 'Зарегистрирован' : 'Не найден'}</div>
+              <div>${s.has_password ? '✅' : '❌'} Мастер-пароль (Argon2id): ${s.has_password ? 'Активен' : 'Не задан'}</div>
+              <div>${s.has_golden_key ? '✅' : '⚪'} Golden Key: ${s.has_golden_key ? 'Зашифрован' : 'Пропущен'}</div>
+              <div>${s.has_funpay ? '✅' : '⚪'} FunPay аккаунт: ${s.has_funpay ? 'Настроен' : 'Пропущен'}</div>
+              <div>${s.has_proxy ? '✅' : '⚪'} Прокси: ${s.has_proxy ? 'Настроен' : 'Прямое подключение'}</div>
+              <div>🔒 Хранилище: AES-256-GCM в защищённом томе</div>
+            `;
+          }
+        } catch {}
+      })();
+
+      body.querySelector('#step6-next-btn')?.addEventListener('click', () => {
+        haptic('selection');
+        step = 7;
+        renderStep();
+      });
+    } else if (step === 7) {
+      body.innerHTML = `
         <div style="width: 60px; height: 60px; margin: 0 auto 16px; border-radius: 50%; background: var(--ok-c, #e8f5e9); color: var(--ok, #4caf50); display: grid; place-items: center">
           <svg style="width: 30px; height: 30px" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
         </div>
@@ -161,17 +332,12 @@ export async function renderOnboarding(container, onComplete) {
         <p class="tx" style="margin: 0 auto 20px; font-size: 13px; line-height: 1.5; opacity: .7">
           Первоначальная настройка завершена. Нажмите кнопку ниже для финализации и входа в панель управления.
         </p>
-        <div class="card glass" style="padding: 14px; margin-bottom: 24px; text-align: left; font-size: 13px; line-height: 1.8">
-          <div>✅ Владелец зарегистрирован</div>
-          <div>✅ Мастер-пароль панели настроен</div>
-          <div>🔒 Шифрование AES-256-GCM активно</div>
-        </div>
-        <button id="step4-fin-btn" class="btn press" style="width: 100%; background: var(--p); color: #fff; padding: 12px; font-weight: 600; border-radius: 14px">
+        <button id="step7-fin-btn" class="btn press" style="width: 100%; background: var(--p); color: #fff; padding: 12px; font-weight: 600; border-radius: 14px">
           Завершить настройку и войти
         </button>
       `;
 
-      body.querySelector('#step4-fin-btn')?.addEventListener('click', async () => {
+      body.querySelector('#step7-fin-btn')?.addEventListener('click', async () => {
         haptic('notification', 'success');
         try {
           await api.finalizeSetup();

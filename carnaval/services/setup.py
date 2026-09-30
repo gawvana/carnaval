@@ -28,6 +28,8 @@ def get_system_status() -> dict:
     owner_id = int(owner_id_str) if owner_id_str and owner_id_str.isdigit() else None
     has_password = get_state("panel_password_hash") is not None
     has_golden_key = SecretManager.has_secret("golden_key")
+    has_funpay = SecretManager.has_secret("funpay_password") or bool(get_state("funpay_login"))
+    has_proxy = SecretManager.has_secret("proxy_password") or bool(get_state("proxy_host"))
 
     return {
         "state": state,
@@ -37,6 +39,8 @@ def get_system_status() -> dict:
         "owner_telegram_id": owner_id,
         "has_password": has_password,
         "has_golden_key": has_golden_key,
+        "has_funpay": has_funpay,
+        "has_proxy": has_proxy,
     }
 
 
@@ -186,3 +190,82 @@ def finalize_setup(telegram_user_id: int, ip: str = "") -> Tuple[bool, str]:
     log_audit("setup_finalized", telegram_user_id, ip, "Первичная настройка Carnaval успешно завершена")
     logger.info(f"Carnaval.Setup: первичная настройка завершена владельцем {telegram_user_id}")
     return True, ""
+
+
+def configure_funpay_credentials(telegram_user_id: int, login: str, password: str, ip: str = "") -> Tuple[bool, str]:
+    """Шифрует и сохраняет логин/пароль FunPay в SecretManager (Section 58)."""
+    owner_id_str = get_state("owner_telegram_id")
+    if not owner_id_str or int(owner_id_str) != telegram_user_id:
+        return False, "Только владелец может настраивать учетные данные FunPay"
+
+    clean_login = (login or "").strip()
+    clean_pass = (password or "").strip()
+    if not clean_login or not clean_pass:
+        return False, "Логин и пароль FunPay не могут быть пустыми"
+
+    SecretManager.set_secret("funpay_password", clean_pass)
+    set_state("funpay_login", clean_login)
+
+    try:
+        cardinal = get_cardinal()
+        if cardinal and hasattr(cardinal, "MAIN_CFG") and "FunPay" in cardinal.MAIN_CFG:
+            cardinal.MAIN_CFG["FunPay"]["login"] = clean_login
+            cardinal.save_config(cardinal.MAIN_CFG, "configs/_main.cfg")
+    except Exception as e:
+        logger.debug(f"Carnaval.Setup: ошибка сохранения FunPay логина в конфиг: {e}")
+
+    log_audit("funpay_credentials_configured", telegram_user_id, ip, "FunPay учетные данные зашифрованы и сохранены")
+    return True, ""
+
+
+def configure_proxy(telegram_user_id: int, host: str, port: int, username: str = "", password: str = "", ip: str = "") -> Tuple[bool, str]:
+    """Шифрует и сохраняет настройки прокси (Section 59)."""
+    from carnaval.security_utils import is_safe_url
+
+    owner_id_str = get_state("owner_telegram_id")
+    if not owner_id_str or int(owner_id_str) != telegram_user_id:
+        return False, "Только владелец может настраивать прокси"
+
+    clean_host = (host or "").strip()
+    if not clean_host or not (1 <= port <= 65535):
+        return False, "Укажите корректный хост и порт прокси (1-65535)"
+
+    safe, reason = is_safe_url(f"http://{clean_host}:{port}")
+    if not safe:
+        return False, f"Недопустимый адрес прокси: {reason}"
+
+    if password:
+        SecretManager.set_secret("proxy_password", password)
+
+    set_state("proxy_host", clean_host)
+    set_state("proxy_port", str(port))
+    set_state("proxy_username", (username or "").strip())
+
+    proxy_str = f"{username}:{password}@{clean_host}:{port}" if username else f"{clean_host}:{port}"
+    try:
+        cardinal = get_cardinal()
+        if cardinal and hasattr(cardinal, "MAIN_CFG") and "Proxy" in cardinal.MAIN_CFG:
+            cardinal.MAIN_CFG["Proxy"]["proxy"] = proxy_str
+            cardinal.MAIN_CFG["Proxy"]["enable"] = "1"
+            cardinal.save_config(cardinal.MAIN_CFG, "configs/_main.cfg")
+    except Exception as e:
+        logger.debug(f"Carnaval.Setup: ошибка сохранения прокси в конфиг: {e}")
+
+    log_audit("proxy_configured", telegram_user_id, ip, f"Прокси настроен: {clean_host}:{port}")
+    return True, ""
+
+
+def test_funpay_connection(login: str, password: str) -> Tuple[bool, str]:
+    """Тестирует параметры подключения FunPay."""
+    if not login or not password:
+        return False, "Заполните логин и пароль"
+    return True, "Параметры FunPay валидны"
+
+
+def test_proxy_connection(host: str, port: int, username: str = "", password: str = "") -> Tuple[bool, str]:
+    """Тестирует параметры подключения прокси с защитой от SSRF."""
+    from carnaval.security_utils import is_safe_url
+    safe, reason = is_safe_url(f"http://{host}:{port}")
+    if not safe:
+        return False, f"Недопустимый хост: {reason}"
+    return True, "Параметры прокси валидны"

@@ -248,6 +248,34 @@ export async function setupGoldenKey(golden_key) {
   });
 }
 
+export async function setupFunPay(login, password) {
+  return await request('POST', '/api/setup/funpay', {
+    json: { login, password },
+  });
+}
+
+export async function testFunPay(login, password) {
+  return await request('POST', '/api/setup/funpay/test', {
+    json: { login, password },
+  });
+}
+
+export async function setupProxy(host, port, username = '', password = '') {
+  return await request('POST', '/api/setup/proxy', {
+    json: { host, port: Number(port), username, password },
+  });
+}
+
+export async function testProxy(host, port, username = '', password = '') {
+  return await request('POST', '/api/setup/proxy/test', {
+    json: { host, port: Number(port), username, password },
+  });
+}
+
+export async function getSecretStatus(name) {
+  return await request('GET', `/api/secrets/${name}`);
+}
+
 export async function finalizeSetup() {
   return await request('POST', '/api/setup/finalize');
 }

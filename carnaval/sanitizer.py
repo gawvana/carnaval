@@ -17,13 +17,13 @@ import logging
 # Регулярные выражения для поиска конфиденциальных данных
 _PATTERNS = [
     # Telegram Bot Token (напр. 123456789:ABCdefGHIjklMNOpqrSTUvwxYZ)
-    (re.compile(r"\b\d{8,10}:[a-zA-Z0-9_-]{35}\b"), "***TG_BOT_TOKEN***"),
+    (re.compile(r"\b\d{8,12}:[a-zA-Z0-9_-]{20,50}\b"), "***TG_BOT_TOKEN***"),
     # Bearer токен в заголовках
     (re.compile(r"(Bearer\s+)[A-Za-z0-9._~+/-]{16,}", re.IGNORECASE), r"\1***BEARER_TOKEN***"),
     # Кука сессии
     (re.compile(r"(carnaval_session=)[A-Za-z0-9._~+/-]{16,}", re.IGNORECASE), r"\1***SESSION_COOKIE***"),
     # Golden key (32 hex символа)
-    (re.compile(r"(golden_key[\"'\s:=]+)[a-fA-F0-9]{32}\b", re.IGNORECASE), r"\1***GOLDEN_KEY***"),
+    (re.compile(r"((?:golden_key|key|secret|token)[\"'\s:=]+)[a-fA-F0-9]{32}\b", re.IGNORECASE), r"\1***SECRET_KEY***"),
     # Пароли в JSON ("password": "...")
     (re.compile(r'("(?:password|new_password|old_password|tg_password)"\s*:\s*")[^"]+(")', re.IGNORECASE), r'\1***REDACTED***\2'),
     # Пароли в query string (password=...)
@@ -38,6 +38,9 @@ def sanitize_log_message(text: str) -> str:
     for pattern, replacement in _PATTERNS:
         text = pattern.sub(replacement, text)
     return text
+
+
+sanitize_message = sanitize_log_message
 
 
 class SensitiveDataLogFilter(logging.Filter):

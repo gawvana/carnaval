@@ -395,19 +395,54 @@ async function renderPlugins(body) {
 // ── Безопасность ─────────────────────────────────────────────────────────────
 
 async function renderSecurity(body) {
-  const [accInfo, proxyInfo, { users: authUsers }, sessionsRes, auditRes] = await Promise.all([
+  const [accInfo, proxyInfo, { users: authUsers }, sessionsRes, auditRes, setupStatus] = await Promise.all([
     api.getAccountInfo().catch(() => ({})),
     api.getProxy().catch(() => ({ enabled: false, proxy_list: [] })),
     api.getAuthorizedUsers().catch(() => ({ users: [] })),
     api.getActiveSessions().catch(() => ({ sessions: [] })),
     api.getAuditLogs(10).catch(() => ({ logs: [] })),
+    api.getSetupStatus().catch(() => ({})),
   ]);
 
   const sessions = sessionsRes.sessions || [];
   const auditLogs = auditRes.logs || [];
   const gkMasked = accInfo.golden_key_masked || (accInfo.golden_key_configured ? '••••••••••••••••' : 'Не задан');
+  const hasPassword = Boolean(setupStatus?.has_password);
+  const hasFunPay = Boolean(setupStatus?.has_funpay);
+  const hasProxy = Boolean(setupStatus?.has_proxy || proxyInfo.enabled);
 
   body.innerHTML = `
+    <!-- Общая сводка безопасности (Section 60) -->
+    <p class="sec-title">Сводка безопасности</p>
+    <div class="rv card glass" style="padding:16px;margin-bottom:16px">
+      <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
+        <div style="display:flex;justify-content:space-between">
+          <span class="tx">Telegram:</span>
+          <b>подключён</b>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span class="tx">Пароль панели:</span>
+          <b>${hasPassword ? 'настроен' : 'не настроен'}</b>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span class="tx">Golden Key:</span>
+          <b>${accInfo.golden_key_configured ? 'настроен' : 'не настроен'}</b>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span class="tx">FunPay:</span>
+          <b>${hasFunPay ? 'настроен' : 'не настроен'}</b>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span class="tx">Proxy:</span>
+          <b>${hasProxy ? 'настроен' : 'не настроен'}</b>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span class="tx">Активные сессии:</span>
+          <b>${sessions.length}</b>
+        </div>
+      </div>
+    </div>
+
     <!-- Аккаунт FunPay -->
     <p class="sec-title">Аккаунт FunPay</p>
     <div class="rv card glass" style="padding:16px;margin-bottom:16px">

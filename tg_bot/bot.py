@@ -337,7 +337,7 @@ class TGBot:
             kb_menu = bot_glue.create_menu_keyboard(public_url)
             self.bot.send_message(
                 m.chat.id,
-                "✨ <b>Carnaval Mini App</b> — панель управления FunPay Cardinal",
+                "👋 <b>Carnaval</b>\n\nУправление системой находится в защищённой панели.",
                 reply_markup=kb_menu
             )
             bot_glue.setup_chat_menu_button(self.bot, m.chat.id, public_url)

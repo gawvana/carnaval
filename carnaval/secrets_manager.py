@@ -129,6 +129,39 @@ class SecretManager:
             return cur.rowcount > 0
 
     @staticmethod
+    def rotate_secret(name: str, new_value: str) -> None:
+        """Ротация существующего секрета новым значением с новым nonce."""
+        SecretManager.set_secret(name, new_value)
+        logger.info(f"Carnaval.Secrets: секрет '{name}' успешно ротирован")
+
+    @staticmethod
+    def migrate_legacy_env_secrets() -> None:
+        """
+        Автоматическая миграция legacy переменных из .env в зашифрованное хранилище SecretManager (Section 34).
+        После сохранения переменные удаляются из os.environ во избежание утечек.
+        """
+        env_map = {
+            "GOLDEN_KEY": "golden_key",
+            "FUNPAY_GOLDEN_KEY": "golden_key",
+            "FUNPAY_PASSWORD": "funpay_password",
+            "SESSION_SECRET": "session_secret",
+            "PROXY_PASSWORD": "proxy_password",
+        }
+
+        migrated_any = False
+        for env_var, secret_name in env_map.items():
+            val = os.getenv(env_var, "").strip()
+            if val:
+                if not SecretManager.has_secret(secret_name):
+                    SecretManager.set_secret(secret_name, val)
+                    migrated_any = True
+                # Удаляем из os.environ во избежание случайных дампов
+                os.environ.pop(env_var, None)
+
+        if migrated_any:
+            logger.info("Carnaval.Secrets: автоматическая миграция секретов из окружения в SecretManager выполнена")
+
+    @staticmethod
     def list_configured_secrets() -> list[str]:
         """Возвращает список имен настроенных секретов (без значений)."""
         conn = get_db_connection()
