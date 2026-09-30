@@ -1,13 +1,47 @@
-/venv
-/venv2
-/__pycache__
-/.idea
-/FunPayAPI/__pycache__
-/logs
-/storage
-/configs
-/plugins
-/build
-/dist
-test.py
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+venv2/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Tests & caches
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Cardinal runtime & state data (NEVER commit secrets/state)
+storage/
+configs/
+logs/
+plugins/
+*.key
+carnaval_secret.key
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Frontend build & deployment
+.vercel/
+node_modules/
+carnaval/web/js/runtime-config.js
+
+# Archives and binaries
 *.zip
+*.tar.gz
+test.py
