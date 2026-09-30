@@ -24,6 +24,9 @@ tg.onThemeChange(() => {
 });
 
 async function main() {
+  // Защитный таймер: сплеш гарантированно скроется максимум через 3.5 секунды
+  setTimeout(hideSplash, 3500);
+
   // 2. Telegram WebApp готовность
   tg.ready();
 
@@ -43,11 +46,21 @@ async function main() {
   }
 
   // 4. Авторизация по initData
-  const authResult = await auth(tg.initData);
+  let authResult;
+  try {
+    authResult = await auth(tg.initData);
+  } catch (err) {
+    authResult = { ok: false, error: err };
+  }
 
-  if (!authResult) {
+  if (!authResult || authResult.ok === false) {
     hideSplash();
-    renderUnauthorizedScreen(false);
+    const err = authResult?.error;
+    if (err && (err.status >= 500 || err.status === 0 || !err.status)) {
+      renderBackendUnavailableScreen(err);
+    } else {
+      renderUnauthorizedScreen(false);
+    }
     return;
   }
 
@@ -164,6 +177,51 @@ function renderUnauthorizedScreen(isOutsideTelegram = false) {
 
   document.getElementById('open-bot-btn')?.addEventListener('click', () => {
     tg.haptic.impact('medium');
+    tg.close();
+  });
+}
+
+/**
+ * Экран ожидания запуска или недоступности бэкенда (HTTP 502/503/504 / Network).
+ */
+function renderBackendUnavailableScreen(err) {
+  const app = document.getElementById('app');
+  if (!app) return;
+
+  const statusMsg = err?.status ? `(HTTP ${err.status})` : '';
+
+  app.innerHTML = `
+    <div class="page" style="min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px">
+      <div class="panel rv in" style="max-width: 420px; width: 100%; text-align: center; padding: 36px 24px">
+        <div style="width: 64px; height: 64px; margin: 0 auto 16px; border-radius: 50%; background: var(--warn-c, #fff3cd); color: var(--warn, #b7791f); display: grid; place-items: center">
+          <svg style="width: 32px; height: 32px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+        </div>
+        <h2 style="margin: 0 0 12px; font-size: 22px">Бэкенд подключается</h2>
+        <p class="tx" style="margin: 0 auto 24px; font-size: 14px; line-height: 1.5">
+          Сервер бэкенда на Infrlo запускается или временно недоступен ${statusMsg}.<br>
+          Если контейнер перезапускается, подождите несколько секунд и обновите.
+        </p>
+        <button class="btn press" id="retry-connect-btn" style="width: 100%; background: var(--primary); color: var(--on-primary); margin-bottom: 12px">
+          🔄 Повторить попытку
+        </button>
+        <button class="btn press" id="open-bot-btn-err" style="width: 100%; background: transparent; border: 1px solid var(--border); color: var(--fg)">
+          Вернуться в чат с ботом
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('retry-connect-btn')?.addEventListener('click', () => {
+    tg.haptic.impact('medium');
+    window.location.reload();
+  });
+
+  document.getElementById('open-bot-btn-err')?.addEventListener('click', () => {
+    tg.haptic.impact('light');
     tg.close();
   });
 }

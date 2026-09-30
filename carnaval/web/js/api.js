@@ -188,7 +188,7 @@ export async function auth(initData) {
     return false;
   } catch (e) {
     console.error('[API] Ошибка auth:', e);
-    return false;
+    return { ok: false, error: e };
   }
 }
 
@@ -577,3 +577,18 @@ export async function restartCardinal(confirm = false) {
 export async function shutdownCardinal(confirm = false) {
   return await request('POST', '/api/more/system/shutdown', { json: { confirm } });
 }
+
+// ── Алиасы и совместимость страниц ───────────────────────────
+export { onEvent as openEventStream } from './sse.js';
+export const updateSetting = patchSetting;
+export const getOrderDetails = getOrder;
+export const sendChatMessage = sendMessage;
+export const sendChatImage = sendImage;
+export const createDeliveryTest = testDeliveryLot;
+
+export async function createProductsFile(name, goods = []) {
+  return await request('POST', '/api/delivery/files', {
+    json: { name, goods },
+  });
+}
+
