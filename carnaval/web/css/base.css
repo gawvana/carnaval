@@ -1,0 +1,189 @@
+/*
+  base.css — базовый сброс стилей, разметка страницы и фон Aurora.
+  Часть дизайн-системы Mattering v2.
+*/
+
+*, *::before, *::after {
+  box-sizing: inherit;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-padding-top: env(safe-area-inset-top, 0px);
+  background: #0b0b10;
+  color-scheme: light dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--on);
+  font: 400 15px/1.5 var(--font);
+  overflow: hidden;
+  transition: background .6s var(--sheet);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body.open {
+  background: #0b0b10;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+}
+
+svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  display: block;
+}
+
+svg.defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* ── Главный контейнер приложения ── */
+#app {
+  position: fixed;
+  inset: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--bg);
+  transform-origin: 50% 0;
+  transition: transform .6s var(--sheet), border-radius .6s var(--sheet), filter .6s var(--sheet);
+  scrollbar-width: none;
+}
+
+#app::-webkit-scrollbar {
+  display: none;
+}
+
+body.open #app {
+  transform: scale(.93) translateY(12px);
+  border-radius: 32px;
+  filter: brightness(.82);
+  overflow: hidden;
+}
+
+/* ── Разметка страницы ── */
+.page {
+  position: relative;
+  min-height: 100%;
+}
+
+.wrap {
+  position: relative;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 16px 220px;
+}
+
+/* ── Aurora (живой цветной фон) ── */
+.aur {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.b {
+  position: absolute;
+  width: 560px;
+  height: 560px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--c), transparent);
+  opacity: .6;
+  translate: 0 calc(var(--sy, 0) * var(--k) * 1px);
+  animation: dr 16s ease-in-out infinite alternate;
+}
+
+@keyframes dr {
+  to {
+    transform: translate(50px, 40px) scale(1.15);
+  }
+}
+
+/* ── Типографика ── */
+h1, h2, h3, h4, p {
+  margin: 0;
+}
+
+h2 {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -.035em;
+  margin: 36px 4px 6px;
+  line-height: 1.15;
+}
+
+h3.k {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 24px 4px 8px;
+  letter-spacing: -.01em;
+}
+
+.tx {
+  margin: 0 4px 14px;
+  color: var(--muted);
+  max-width: 60ch;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.tx b {
+  color: var(--on);
+  font-weight: 600;
+}
+
+/* ── Scroll reveal ── */
+html.js .rv {
+  opacity: 0;
+  transform: translateY(24px) scale(.98);
+  filter: blur(8px);
+  transition: opacity .8s, filter .8s, transform 1s var(--spring);
+  transition-delay: var(--d, 0ms);
+}
+
+html.js .rv.in {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.js .rv {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+}

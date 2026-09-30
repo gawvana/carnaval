@@ -27,7 +27,10 @@ from telebot.types import InlineKeyboardMarkup as K, InlineKeyboardButton as B, 
     InputFile
 from tg_bot import utils, static_keyboards as skb, keyboards as kb, CBT
 from Utils import cardinal_tools, updater
+import Utils
 from locales.localizer import Localizer
+import carnaval.emoji
+from carnaval import bot_glue
 
 logger = logging.getLogger("TGBot")
 localizer = Localizer()
@@ -324,12 +327,27 @@ class TGBot:
             self.bot.answer_callback_query(c.id, _("adv_fpc", language=c.from_user.language_code), show_alert=True)
         return
 
-    # Команды
     def send_settings_menu(self, m: Message):
         """
         Отправляет основное меню настроек (новым сообщением).
+        Если настроен CARNAVAL_PUBLIC_URL — отправляет кнопку Mini App и настраивает кнопку меню.
         """
-        self.bot.send_message(m.chat.id, _("desc_main"), reply_markup=skb.SETTINGS_SECTIONS())
+        public_url = bot_glue.get_public_url(self.cardinal)
+        if public_url:
+            kb_menu = bot_glue.create_menu_keyboard(public_url)
+            self.bot.send_message(
+                m.chat.id,
+                "✨ <b>Carnaval Mini App</b> — панель управления FunPay Cardinal",
+                reply_markup=kb_menu
+            )
+            bot_glue.setup_chat_menu_button(self.bot, m.chat.id, public_url)
+        else:
+            self.bot.send_message(m.chat.id, _("desc_main"), reply_markup=skb.SETTINGS_SECTIONS())
+
+    def open_classic_menu(self, c: CallbackQuery):
+        """Открывает классическое меню настроек Cardinal."""
+        self.bot.edit_message_text(_("desc_main"), c.message.chat.id, c.message.id, reply_markup=skb.SETTINGS_SECTIONS())
+        self.bot.answer_callback_query(c.id)
 
     def send_profile(self, m: Message):
         """
@@ -1117,6 +1135,7 @@ class TGBot:
         self.cbq_handler(self.cancel_refund, lambda c: c.data.startswith(f"{CBT.REFUND_CANCELLED}:"))
         self.cbq_handler(self.refund, lambda c: c.data.startswith(f"{CBT.REFUND_CONFIRMED}:"))
         self.cbq_handler(self.open_order_menu, lambda c: c.data.startswith(f"{CBT.BACK_TO_ORDER_KB}:"))
+        self.cbq_handler(self.open_classic_menu, lambda c: c.data == bot_glue.CLASSIC_MENU_CBT)
         self.cbq_handler(self.open_cp, lambda c: c.data == CBT.MAIN)
         self.cbq_handler(self.open_cp2, lambda c: c.data == CBT.MAIN2)
         self.cbq_handler(self.open_settings_section, lambda c: c.data.startswith(f"{CBT.CATEGORY}:"))

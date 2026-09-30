@@ -678,6 +678,18 @@ class Cardinal(object):
         self.runner = FunPayAPI.Runner(self.account, self.old_mode_enabled)
         self.__update_profile()
         self.run_handlers(self.post_init_handlers, (self,))
+
+        # Carnaval Mini App (опционально)
+        try:
+            if self.MAIN_CFG.getboolean("Carnaval", "enabled", fallback=False):
+                from carnaval.server import start as _carnaval_start
+                _host = self.MAIN_CFG.get("Carnaval", "host", fallback="127.0.0.1")
+                _port = int(self.MAIN_CFG.get("Carnaval", "port", fallback="8765"))
+                _carnaval_start(self, _host, _port)
+        except Exception:
+            logger.warning("Carnaval: ошибка при запуске Mini App сервера")
+            logger.debug("TRACEBACK", exc_info=True)
+
         return self
 
     def run(self):

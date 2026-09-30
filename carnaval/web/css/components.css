@@ -1,0 +1,638 @@
+/*
+  components.css — компоненты дизайн-системы Mattering v2.
+  Стекло, навигация, док, линза, FAB, шторки, переключатели, карточки, тосты.
+*/
+
+/* ── Слой стекла (Liquid Glass) ── */
+.glass {
+  position: relative;
+  background: var(--glass);
+  backdrop-filter: blur(var(--blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(180%);
+  border: 1px solid var(--edge);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .4), 0 10px 30px var(--sh);
+}
+
+html.refract .glass {
+  backdrop-filter: url(#lg) blur(calc(var(--blur) * .35)) saturate(170%);
+}
+
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  pointer-events: none;
+  background: linear-gradient(var(--ang, 135deg),
+    rgba(255, 255, 255, .95),
+    rgba(255, 255, 255, 0) 32%,
+    rgba(255, 255, 255, 0) 68%,
+    rgba(255, 255, 255, .6));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+.glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .4s;
+  background: radial-gradient(170px circle at var(--mx, 50%) var(--my, 0%),
+    var(--glow), transparent 70%);
+}
+
+.glass:hover::after {
+  opacity: 1;
+}
+
+/* ── Пружинный отклик на касание (Press) ── */
+.press {
+  transition: transform .55s var(--spring), filter .3s;
+}
+
+.press:active {
+  transform: scale(.94);
+  filter: brightness(1.08);
+  transition-duration: .15s;
+}
+
+/* ── Шапка (Sticky Glass Header) ── */
+.nav {
+  position: sticky;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  z-index: 15;
+  max-width: 692px;
+  margin: 12px auto 0;
+  height: 56px;
+  border-radius: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px 0 20px;
+  transition: height .6s var(--spring), border-radius .6s var(--spring), margin .6s var(--spring);
+}
+
+.nav b {
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: -.02em;
+  transition: font-size .5s var(--spring);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#app.sc .nav {
+  height: 46px;
+  margin-top: 6px;
+  border-radius: 23px;
+}
+
+#app.sc .nav b {
+  font-size: 14px;
+}
+
+.ib {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  transition: background .2s, color .2s;
+}
+
+.ib:hover {
+  color: var(--on);
+  background: var(--track);
+}
+
+/* ── Док навигации и линза (Dock) ── */
+.chrome {
+  position: fixed;
+  z-index: 25;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  width: min(420px, calc(100% - 24px));
+  pointer-events: none;
+}
+
+.chrome > * {
+  pointer-events: auto;
+}
+
+.dock {
+  height: 72px;
+  border-radius: 36px;
+  display: flex;
+  padding: 8px;
+  touch-action: none;
+  user-select: none;
+  transform-origin: 50% 100%;
+  transition: height .6s var(--spring), transform .6s var(--spring);
+}
+
+.chrome.min .dock {
+  height: 54px;
+  transform: scale(.92);
+}
+
+.chrome.min .fab {
+  translate: 0 8px;
+}
+
+.tab {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  border-radius: 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  transition: color .3s;
+}
+
+.tab span {
+  transition: opacity .3s, font-size .4s var(--spring), height .4s var(--spring);
+  height: 14px;
+  line-height: 14px;
+}
+
+.chrome.min .tab span {
+  opacity: 0;
+  font-size: 0;
+  height: 0;
+}
+
+.chrome.min .tab svg {
+  width: 20px;
+  height: 20px;
+}
+
+.tab.on {
+  color: var(--primary);
+}
+
+.lens {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 8px;
+  width: calc((100% - 16px) / 5);
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--primary) 16%, var(--glow));
+  border: 1px solid var(--edge);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .6), 0 4px 14px var(--sh);
+  transform: translateX(calc(var(--i, 0) * 100%));
+  transition: transform .65s var(--spring), background .3s;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.dock.lift .lens {
+  transform: translateX(calc(var(--i, 0) * 100%)) scale(1.14, 1.1);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  backdrop-filter: blur(3px) saturate(240%);
+  -webkit-backdrop-filter: blur(3px) saturate(240%);
+}
+
+/* ── Плавающая кнопка действия (FAB) ── */
+.fab {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  margin: 0 6px 12px auto;
+  border-radius: 20px;
+  color: var(--on-primary);
+  background: color-mix(in srgb, var(--primary) 86%, transparent);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, .35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5),
+              0 12px 26px color-mix(in srgb, var(--primary) 45%, transparent);
+  transition: transform .55s var(--spring), border-radius .7s var(--bounce), translate .6s var(--spring);
+}
+
+.fab:hover {
+  border-radius: 29px;
+}
+
+.fab:active {
+  transform: scale(.92);
+  transition-duration: .15s;
+}
+
+.fab svg {
+  width: 26px;
+  height: 26px;
+  stroke-width: 2.2;
+}
+
+/* ── Нижняя шторка (Bottom Sheet) ── */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, .4);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .5s var(--sheet);
+}
+
+body.open .scrim {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sheet {
+  position: fixed;
+  z-index: 45;
+  left: 50%;
+  bottom: 0;
+  width: min(540px, 100%);
+  max-height: 88vh;
+  overflow-y: auto;
+  border-radius: 34px 34px 0 0;
+  padding: 0 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  background: var(--glass2);
+  visibility: hidden;
+  transform: translate(-50%, 104%);
+  transition: transform .6s var(--sheet), visibility 0s .6s;
+  scrollbar-width: none;
+}
+
+.sheet::-webkit-scrollbar {
+  display: none;
+}
+
+body.open .sheet {
+  visibility: visible;
+  transform: translate(-50%, 0);
+  transition-delay: 0s;
+}
+
+.hd {
+  cursor: grab;
+  touch-action: none;
+  padding-top: 4px;
+}
+
+.grab {
+  height: 28px;
+  display: grid;
+  place-items: center;
+}
+
+.grab i {
+  width: 40px;
+  height: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--on) 28%, transparent);
+}
+
+.sheet h3 {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  margin: 4px 4px 16px;
+}
+
+.opt {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 60px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--on) 6%, transparent);
+  text-align: left;
+  font-weight: 600;
+}
+
+.opt em {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  font-style: normal;
+  border-radius: 14px;
+}
+
+/* ── Карточки (Tonal Cards) ── */
+.cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.card {
+  min-height: 120px;
+  padding: 16px;
+  border-radius: 28px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-align: left;
+  transition: transform .55s var(--spring), border-radius .8s var(--bounce), background-color .35s, color .35s;
+}
+
+.card:active {
+  transform: scale(.96);
+  transition-duration: .15s;
+}
+
+.card b {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.card span {
+  font-size: 13px;
+  opacity: .8;
+}
+
+.card.p { background: var(--p); color: var(--on-p); }
+.card.s { background: var(--s); color: var(--on-s); }
+.card.t { background: var(--t); color: var(--on-t); }
+.card.n { background: var(--n); color: var(--on-n); }
+
+.card.on {
+  background: var(--primary);
+  color: var(--on-primary);
+  border-radius: 64px 18px 64px 18px;
+  box-shadow: 0 12px 26px color-mix(in srgb, var(--primary) 38%, transparent);
+}
+
+/* ── Панель контента ── */
+.panel {
+  background: var(--n);
+  color: var(--on-n);
+  border-radius: 32px;
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+/* ── Строка настроек / переключателя ── */
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  font-size: 14px;
+  gap: 12px;
+}
+
+/* ── Переключатель (Switch) ── */
+.sw {
+  position: relative;
+  width: 52px;
+  height: 32px;
+  border-radius: 16px;
+  background: var(--off);
+  transition: background .3s;
+  flex: none;
+}
+
+.sw[aria-checked=true] {
+  background: var(--primary);
+}
+
+.sw i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 28px;
+  height: 28px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .25);
+  transition: transform .55s var(--spring), width .25s var(--spring);
+}
+
+.sw[aria-checked=true] i {
+  transform: translateX(20px);
+}
+
+.sw:active i {
+  width: 36px;
+}
+
+.sw[aria-checked=true]:active i {
+  transform: translateX(12px);
+}
+
+/* ── Кнопки (Buttons) ── */
+.btns {
+  display: flex;
+  gap: 10px;
+}
+
+.btn {
+  flex: 1;
+  height: 48px;
+  padding: 0 18px;
+  border-radius: 24px;
+  font-weight: 600;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--primary);
+  color: var(--on-primary);
+  transition: transform .55s var(--spring), border-radius .5s var(--bounce);
+}
+
+.btn:active {
+  border-radius: 14px;
+  transform: scale(.96);
+  transition-duration: .15s;
+}
+
+.btn.tn { background: var(--p); color: var(--on-p); }
+.btn.ok { background: var(--ok); color: var(--on-ok); }
+.btn.err { background: var(--err); color: var(--on-err); }
+
+/* ── Сегментный переключатель ── */
+.seg {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--seg-cols, 3), 1fr);
+  background: var(--track);
+  border-radius: 22px;
+  padding: 4px;
+  touch-action: none;
+  user-select: none;
+}
+
+.seg i {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 8px) / var(--seg-cols, 3));
+  border-radius: 18px;
+  background: var(--thumb);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .14), inset 0 1px 0 rgba(255, 255, 255, .5);
+  transform: translateX(calc(var(--k, 0) * 100%));
+  transition: transform .6s var(--spring);
+}
+
+.seg button {
+  position: relative;
+  z-index: 1;
+  height: 38px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--muted);
+  transition: color .25s;
+}
+
+.seg button.on {
+  color: var(--on);
+}
+
+/* ── Сетка статистики на дашборде ── */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.stat-card {
+  background: var(--n);
+  color: var(--on-n);
+  border-radius: var(--r4);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.stat-card .val {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -.04em;
+  line-height: 1.1;
+}
+
+.stat-card .lbl {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* ── Тосты (Toast notifications) ── */
+.toast-container {
+  position: fixed;
+  bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  width: min(360px, calc(100% - 32px));
+}
+
+.toast {
+  padding: 12px 20px;
+  border-radius: var(--rf);
+  background: var(--on);
+  color: var(--bg);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  box-shadow: var(--e2);
+  animation: toastin .4s var(--spring) both;
+  pointer-events: auto;
+}
+
+.toast.out {
+  animation: toastout .3s var(--gentle) both;
+}
+
+@keyframes toastin {
+  from { opacity: 0; transform: translateY(12px) scale(.9); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes toastout {
+  from { opacity: 1; }
+  to { opacity: 0; transform: translateY(-6px) scale(.95); }
+}
+
+/* ── Загрузочный экран (Splash) ── */
+#splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  gap: 16px;
+  transition: opacity .45s var(--gentle), visibility 0s .45s;
+}
+
+#splash.hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.splash-logo svg {
+  width: 76px;
+  height: 76px;
+}
+
+.splash-label {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  color: var(--on);
+}
+
+/* ── Пустое состояние ── */
+.empty {
+  text-align: center;
+  padding: 64px 20px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.empty svg {
+  margin: 0 auto 16px;
+  width: 48px;
+  height: 48px;
+  opacity: .35;
+}
+
+/* ── Пульсация live индикаторов ── */
+.pulse {
+  animation: pulse-ring 1s cubic-bezier(.215, .61, .355, 1);
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.08); filter: brightness(1.2); }
+  100% { transform: scale(1); }
+}

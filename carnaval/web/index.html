@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#FBF8FF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111218" media="(prefers-color-scheme: dark)">
+<title>Carnaval</title>
+<!-- Telegram WebApp JS SDK -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<!-- Typography: Onest -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<!-- Mattering Design System CSS Layers -->
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/css/components.css">
+<script>
+  document.documentElement.className = 'js';
+  const isWeak = (navigator.deviceMemory && navigator.deviceMemory < 4) || (navigator.connection && navigator.connection.saveData);
+  if (!isWeak && /Chrom(e|ium)\//.test(navigator.userAgent) && !/Firefox/.test(navigator.userAgent)) {
+    document.documentElement.classList.add('refract');
+  }
+</script>
+<script src="/js/runtime-config.js"></script>
+</head>
+<body>
+<!-- SVG Displacement Filter for Apple Liquid Glass Refraction -->
+<svg class="defs" aria-hidden="true">
+  <filter id="lg" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feImage preserveAspectRatio="none" result="m" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='x'%3E%3Cstop offset='0' stop-color='%23f00'/%3E%3Cstop offset='.16' stop-color='%23800000'/%3E%3Cstop offset='.84' stop-color='%23800000'/%3E%3Cstop offset='1' stop-color='%23000'/%3E%3C/linearGradient%3E%3ClinearGradient id='y' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%230f0'/%3E%3Cstop offset='.16' stop-color='%23008000'/%3E%3Cstop offset='.84' stop-color='%23008000'/%3E%3Cstop offset='1' stop-color='%23000'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' fill='url(%23x)'/%3E%3Crect width='100' height='100' fill='url(%23y)' style='mix-blend-mode:screen'/%3E%3C/svg%3E"/>
+    <feDisplacementMap in="SourceGraphic" in2="m" scale="28" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+
+<div id="app"></div>
+
+<!-- Scrim & Bottom Sheet (создать / детали) -->
+<div class="scrim" id="scrim"></div>
+<div class="sheet glass" id="sheet" role="dialog" aria-modal="true" aria-label="Действия">
+  <div class="hd" id="hd"><div class="grab"><i></i></div><h3 id="sheet-title">Действия</h3></div>
+  <div id="sheet-content"></div>
+</div>
+
+<!-- Splash screen (показывается до полной загрузки) -->
+<div id="splash" aria-hidden="true">
+  <div class="splash-logo">
+    <svg viewBox="0 0 48 48" fill="none">
+      <rect x="4" y="4" width="40" height="40" rx="14" fill="var(--primary)"/>
+      <path d="M14 24h20M24 14l10 10-10 10" stroke="var(--on-primary)"
+            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </div>
+  <p class="splash-label">Carnaval</p>
+</div>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

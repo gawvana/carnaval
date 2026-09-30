@@ -257,6 +257,34 @@ def load_main_config(config_path: str):
     return config
 
 
+def load_carnaval_config(config, config_path: str) -> None:
+    """
+    Аддитивная загрузка / миграция секции [Carnaval].
+    Вызывается ПОСЛЕ load_main_config — секция опциональна,
+    её отсутствие не является ошибкой.
+    Значения по умолчанию добавляются автоматически.
+    """
+    SECTION = "Carnaval"
+    DEFAULTS = {
+        "enabled":        "0",
+        "host":           "127.0.0.1",
+        "port":           "8765",
+        "secretKey":      "",   # обязательно задать вручную
+        "allowedOrigins": "*",  # CORS: * = любой, или через запятую (https://myapp.vercel.app)
+    }
+    changed = False
+    if SECTION not in config.sections():
+        config.add_section(SECTION)
+        changed = True
+    for key, default_val in DEFAULTS.items():
+        if not config.has_option(SECTION, key):
+            config.set(SECTION, key, default_val)
+            changed = True
+    if changed:
+        with open(config_path, "w", encoding="utf-8") as f:
+            config.write(f)
+
+
 def load_auto_response_config(config_path: str):
     """
     Парсит и проверяет на правильность конфиг команд.

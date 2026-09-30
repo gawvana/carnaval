@@ -1,0 +1,344 @@
+/*
+  app.css — базовые стили Carnaval Mini App.
+  Компоненты: glass, press, nav, dock, fab, sheet, aurora, splash, cards, switches.
+  Всё из Mattering v2. Никакого Tailwind, никаких CDN.
+*/
+
+/* ── Reset ─────────────────────────────────────────── */
+*,*::before,*::after { box-sizing: inherit }
+html, body { height: 100%; margin: 0 }
+html { scroll-padding-top: env(safe-area-inset-top,0px); background: #0b0b10 }
+body {
+  background: var(--bg);
+  color: var(--on);
+  font: 400 15px/1.5 var(--font);
+  overflow: hidden;
+  transition: background .6s var(--sheet);
+}
+body.open { background: #0b0b10 }
+button {
+  font: inherit; color: inherit; border: 0;
+  background: none; cursor: pointer; padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+button:focus-visible,
+input:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px }
+svg {
+  width: 22px; height: 22px; fill: none;
+  stroke: currentColor; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round; display: block;
+}
+
+/* ── App root ──────────────────────────────────────── */
+#app {
+  position: fixed; inset: 0; overflow-x: hidden; overflow-y: auto;
+  background: var(--bg);
+  transform-origin: 50% 0;
+  transition: transform .6s var(--sheet), border-radius .6s var(--sheet), filter .6s var(--sheet);
+  scrollbar-width: none;
+}
+#app::-webkit-scrollbar { display: none }
+body.open #app {
+  transform: scale(.93) translateY(12px);
+  border-radius: 32px;
+  filter: brightness(.82);
+  overflow: hidden;
+}
+
+/* ── Splash ────────────────────────────────────────── */
+#splash {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: var(--bg);
+  gap: var(--sp3);
+  transition: opacity .4s var(--gentle), visibility 0s .4s;
+}
+#splash.hidden { opacity: 0; visibility: hidden }
+.splash-logo svg { width: 72px; height: 72px }
+.splash-label {
+  font-size: 20px; font-weight: 800;
+  letter-spacing: -.04em; color: var(--on);
+}
+
+/* ── Aurora (background blobs) ─────────────────────── */
+.aur { position: absolute; inset: 0; overflow: hidden; pointer-events: none }
+.b {
+  position: absolute;
+  width: 560px; height: 560px; border-radius: 50%;
+  background: radial-gradient(closest-side, var(--c), transparent);
+  opacity: .6;
+  translate: 0 calc(var(--sy,0) * var(--k) * 1px);
+  animation: dr 16s ease-in-out infinite alternate;
+}
+@keyframes dr { to { transform: translate(50px,40px) scale(1.15) } }
+
+/* ── Page ──────────────────────────────────────────── */
+.page { position: relative }
+.wrap {
+  position: relative;
+  max-width: 720px; margin: 0 auto;
+  padding: 0 16px 220px;
+}
+
+/* ── Glass ─────────────────────────────────────────── */
+.glass {
+  position: relative;
+  background: var(--glass);
+  backdrop-filter: blur(var(--blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(180%);
+  border: 1px solid var(--edge);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.4), 0 10px 30px var(--sh);
+}
+.glass::before {
+  content: "";
+  position: absolute; inset: 0; border-radius: inherit;
+  padding: 1.5px; pointer-events: none;
+  background: linear-gradient(var(--ang,135deg),
+    rgba(255,255,255,.95),
+    rgba(255,255,255,0) 32%,
+    rgba(255,255,255,0) 68%,
+    rgba(255,255,255,.6));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+.glass::after {
+  content: "";
+  position: absolute; inset: 0; border-radius: inherit;
+  pointer-events: none; opacity: 0; transition: opacity .4s;
+  background: radial-gradient(170px circle at var(--mx,50%) var(--my,0%),
+    var(--glow), transparent 70%);
+}
+.glass:hover::after { opacity: 1 }
+
+/* ── Press (spring tap feedback) ───────────────────── */
+.press { transition: transform .55s var(--spring), filter .3s }
+.press:active { transform: scale(.94); filter: brightness(1.08); transition-duration: .15s }
+
+/* ── Nav bar ───────────────────────────────────────── */
+.nav {
+  position: sticky;
+  top: calc(12px + env(safe-area-inset-top,0px));
+  z-index: 5;
+  max-width: 692px; margin: 12px auto 0;
+  height: 56px; border-radius: 28px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 8px 0 22px;
+  transition: height .6s var(--spring), border-radius .6s var(--spring), margin .6s var(--spring);
+}
+.nav b { font-weight: 700; font-size: 16px; letter-spacing: -.01em; transition: font-size .5s var(--spring) }
+#app.sc .nav { height: 46px; margin-top: 6px; border-radius: 23px }
+#app.sc .nav b { font-size: 14px }
+
+.ib {
+  width: 42px; height: 42px; border-radius: 50%;
+  display: grid; place-items: center; color: var(--muted);
+}
+
+/* ── Dock ──────────────────────────────────────────── */
+.chrome {
+  position: fixed; z-index: 10;
+  left: 50%; transform: translateX(-50%);
+  bottom: calc(14px + env(safe-area-inset-bottom,0px));
+  width: min(410px,calc(100% - 24px));
+  pointer-events: none;
+}
+.chrome > * { pointer-events: auto }
+
+.dock {
+  height: 72px; border-radius: 36px;
+  display: flex; padding: 8px;
+  touch-action: none; user-select: none;
+  transform-origin: 50% 100%;
+  transition: height .6s var(--spring), transform .6s var(--spring);
+}
+.chrome.min .dock { height: 54px; transform: scale(.9) }
+.chrome.min .fab { translate: 0 6px }
+
+.tab {
+  position: relative; z-index: 1; flex: 1; border-radius: 28px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; font-size: 11px; font-weight: 600; color: var(--muted);
+  transition: color .3s;
+}
+.tab span {
+  transition: opacity .3s, font-size .4s var(--spring), height .4s var(--spring);
+  height: 14px;
+}
+.chrome.min .tab span { opacity: 0; font-size: 0; height: 0 }
+.chrome.min .tab svg { width: 20px; height: 20px }
+.tab.on { color: var(--primary) }
+
+.lens {
+  position: absolute; top: 8px; bottom: 8px; left: 8px;
+  width: calc((100% - 16px) / 5);
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--primary) 16%, var(--glow));
+  border: 1px solid var(--edge);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 4px 14px var(--sh);
+  transform: translateX(calc(var(--i,0) * 100%));
+  transition: transform .65s var(--spring), background .3s;
+}
+.dock.lift .lens {
+  transform: translateX(calc(var(--i,0) * 100%)) scale(1.14,1.1);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  backdrop-filter: blur(3px) saturate(240%);
+  -webkit-backdrop-filter: blur(3px) saturate(240%);
+}
+
+/* ── FAB ───────────────────────────────────────────── */
+.fab {
+  display: grid; place-items: center;
+  width: 58px; height: 58px;
+  margin: 0 6px 12px auto;
+  border-radius: 20px;
+  color: var(--on-primary);
+  background: color-mix(in srgb, var(--primary) 86%, transparent);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255,255,255,.35);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5),
+              0 12px 26px color-mix(in srgb, var(--primary) 45%, transparent);
+  transition: transform .55s var(--spring), border-radius .7s var(--bounce), translate .6s var(--spring);
+}
+.fab:hover { border-radius: 29px }
+.fab:active { transform: scale(.92); transition-duration: .15s }
+.fab svg { width: 26px; height: 26px; stroke-width: 2 }
+
+/* ── Sheet (bottom sheet) ───────────────────────────── */
+.scrim {
+  position: fixed; inset: 0; z-index: 20;
+  background: rgba(0,0,0,.34);
+  opacity: 0; pointer-events: none;
+  transition: opacity .5s var(--sheet);
+}
+body.open .scrim { opacity: 1; pointer-events: auto }
+
+.sheet {
+  position: fixed; z-index: 21;
+  left: 50%; bottom: 0;
+  width: min(520px,100%); border-radius: 34px 34px 0 0;
+  padding: 0 16px calc(22px + env(safe-area-inset-bottom,0px));
+  background: var(--glass2);
+  visibility: hidden;
+  transform: translate(-50%, 104%);
+  transition: transform .6s var(--sheet), visibility 0s .6s;
+}
+body.open .sheet { visibility: visible; transform: translate(-50%,0); transition-delay: 0s }
+
+.hd { cursor: grab; touch-action: none }
+.grab { height: 30px; display: grid; place-items: center }
+.grab i { width: 40px; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--on) 28%, transparent) }
+.sheet h3 { font-size: 24px; font-weight: 800; letter-spacing: -.03em; margin: 2px 4px 14px }
+
+.opt {
+  display: flex; align-items: center; gap: 14px;
+  width: 100%; height: 64px; padding: 0 14px; margin-bottom: 8px;
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--on) 6%, transparent);
+  text-align: left; font-weight: 600;
+}
+.opt em { width: 40px; height: 40px; display: grid; place-items: center; font-style: normal }
+
+/* ── Cards (тональные) ─────────────────────────────── */
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px }
+.card {
+  height: 128px; padding: 16px; border-radius: 28px;
+  display: flex; flex-direction: column; justify-content: space-between; text-align: left;
+  transition: transform .55s var(--spring), border-radius .8s var(--bounce), background-color .35s, color .35s;
+}
+.card:active { transform: scale(.96); transition-duration: .15s }
+.card b { font-size: 17px; font-weight: 700 }
+.card span { font-size: 13px; opacity: .78 }
+.card.p  { background: var(--p);  color: var(--on-p) }
+.card.s  { background: var(--s);  color: var(--on-s) }
+.card.t  { background: var(--t);  color: var(--on-t) }
+.card.n  { background: var(--n);  color: var(--on-n) }
+.card.on {
+  background: var(--primary); color: var(--on-primary);
+  border-radius: 64px 18px 64px 18px;
+  box-shadow: 0 12px 26px color-mix(in srgb, var(--primary) 38%, transparent);
+}
+
+/* ── Panel ─────────────────────────────────────────── */
+.panel { background: var(--n); color: var(--on-n); border-radius: 32px; padding: 18px; display: grid; gap: 16px }
+
+/* ── Row (label + control) ─────────────────────────── */
+.row { display: flex; justify-content: space-between; align-items: center; font-weight: 600 }
+
+/* ── Switch ────────────────────────────────────────── */
+.sw {
+  position: relative; width: 52px; height: 32px; border-radius: 16px;
+  background: var(--off); transition: background .3s;
+}
+.sw[aria-checked=true] { background: var(--primary) }
+.sw i {
+  position: absolute; top: 2px; left: 2px;
+  width: 28px; height: 28px; border-radius: 14px;
+  background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.25);
+  transition: transform .55s var(--spring), width .25s var(--spring);
+}
+.sw[aria-checked=true] i { transform: translateX(20px) }
+.sw:active i { width: 36px }
+.sw[aria-checked=true]:active i { transform: translateX(12px) }
+
+/* ── Buttons ───────────────────────────────────────── */
+.btns { display: flex; gap: 10px }
+.btn {
+  flex: 1; height: 50px; border-radius: 25px; font-weight: 600;
+  background: var(--primary); color: var(--on-primary);
+  transition: transform .55s var(--spring), border-radius .5s var(--bounce);
+}
+.btn:active { border-radius: 14px; transform: scale(.96); transition-duration: .15s }
+.btn.tn { background: var(--p); color: var(--on-p) }
+.btn.ok { background: var(--ok); color: var(--on-ok) }
+.btn.err { background: var(--err); color: var(--on-err) }
+
+/* ── Scroll-reveal ─────────────────────────────────── */
+html.js .rv {
+  opacity: 0; transform: translateY(28px) scale(.98); filter: blur(8px);
+  transition: opacity .8s, filter .8s, transform 1s var(--spring);
+  transition-delay: var(--d,0ms);
+}
+html.js .rv.in { opacity: 1; transform: none; filter: none }
+
+/* ── Dashboard stat cards ───────────────────────────── */
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px }
+.stat-card {
+  background: var(--n); color: var(--on-n);
+  border-radius: var(--r4); padding: 14px 16px;
+}
+.stat-card .val { font-size: 26px; font-weight: 800; letter-spacing: -.04em; line-height: 1 }
+.stat-card .lbl { font-size: 12px; color: var(--muted); margin-top: 2px }
+
+/* ── Section headers ────────────────────────────────── */
+h2 { font-size: 28px; font-weight: 800; letter-spacing: -.035em; margin: 56px 4px 6px; line-height: 1.1 }
+h3.k { font-size: 17px; font-weight: 700; margin: 26px 4px 8px; letter-spacing: -.01em }
+.tx { margin: 0 4px 14px; color: var(--muted); max-width: 60ch }
+.tx b { color: var(--on); font-weight: 600 }
+
+/* ── Error/empty state ──────────────────────────────── */
+.empty {
+  text-align: center; padding: var(--sp7) var(--sp5);
+  color: var(--muted); font-size: 14px;
+}
+.empty svg { margin: 0 auto var(--sp3); width: 48px; height: 48px; opacity: .4 }
+
+/* ── Toast ──────────────────────────────────────────── */
+.toast-container {
+  position: fixed; bottom: calc(100px + env(safe-area-inset-bottom,0px));
+  left: 50%; transform: translateX(-50%);
+  z-index: 50; display: flex; flex-direction: column; gap: var(--sp2);
+  pointer-events: none;
+}
+.toast {
+  padding: 10px 18px; border-radius: var(--rf);
+  background: var(--on); color: var(--bg);
+  font-size: 14px; font-weight: 600;
+  box-shadow: var(--e2);
+  animation: toastin .4s var(--spring) both;
+}
+.toast.out { animation: toastout .3s var(--gentle) both }
+@keyframes toastin  { from { opacity:0; transform:translateY(12px) scale(.9) } to { opacity:1; transform:none } }
+@keyframes toastout { from { opacity:1 } to { opacity:0; transform:translateY(-6px) scale(.95) } }

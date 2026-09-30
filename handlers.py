@@ -886,3 +886,21 @@ BIND_TO_ORDER_STATUS_CHANGED = [send_thank_u_message_handler, send_order_confirm
 BIND_TO_POST_DELIVERY = [send_delivery_notification_handler]
 
 BIND_TO_POST_START = [send_bot_started_notification_handler]
+
+# Carnaval SSE-мост
+try:
+    from carnaval.bridge import (
+        bridge_new_order_handler,
+        bridge_order_status_changed_handler,
+        bridge_new_message_handler,
+        bridge_post_delivery_handler,
+        bridge_post_lots_raise_handler,
+    )
+    BIND_TO_NEW_ORDER.append(bridge_new_order_handler)
+    BIND_TO_ORDER_STATUS_CHANGED.append(bridge_order_status_changed_handler)
+    BIND_TO_NEW_MESSAGE.append(bridge_new_message_handler)
+    BIND_TO_LAST_CHAT_MESSAGE_CHANGED.append(bridge_new_message_handler)
+    BIND_TO_POST_DELIVERY.append(bridge_post_delivery_handler)
+    BIND_TO_POST_LOTS_RAISE.append(bridge_post_lots_raise_handler)
+except Exception:
+    pass

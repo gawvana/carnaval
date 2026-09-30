@@ -1,0 +1,160 @@
+/*
+  tokens.css — CSS-переменные дизайн-системы Mattering v2.
+  Источник истины: mattering.html (копировать дословно).
+  Три слоя: 1) тональный цвет, 2) стекло, 3) пружинное движение.
+*/
+
+:root {
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  color-scheme: light dark;
+
+  /* --- Цвет (Light) --- */
+  --bg: #FBF8FF;
+  --on: #1B1B21;
+  --muted: #5F6070;
+  --outline: rgba(27,27,33,.16);
+  --track: rgba(27,27,33,.09);
+  --off: rgba(120,120,140,.4);
+  --primary: #4F5DFF;
+  --on-primary: #fff;
+  --p: #DDE0FF;
+  --on-p: #151C7A;
+  --s: #E1E0F9;
+  --on-s: #1C1C30;
+  --t: #FFD8F0;
+  --on-t: #3E0A33;
+  --n: #EDEBF3;
+  --on-n: #3A3B47;
+
+  /* --- Статус --- */
+  --err: #BA1B3D;    --on-err: #fff;
+  --err-c: #FFD9DE;  --on-err-c: #5E0021;
+  --ok: #1B6E4A;     --on-ok: #fff;
+  --ok-c: #C6F2D8;   --on-ok-c: #04321D;
+  --warn: #8A5A00;   --on-warn: #fff;
+  --warn-c: #FFE2AE; --on-warn-c: #2B1A00;
+
+  /* --- Стекло --- */
+  --glass: rgba(255,255,255,.34);
+  --glass2: rgba(255,255,255,.62);
+  --glass-solid: #F1EEF9;
+  --edge: rgba(255,255,255,.7);
+  --sh: rgba(40,44,110,.2);
+  --glow: rgba(255,255,255,.6);
+  --thumb: #fff;
+  --blur: 22px;
+
+  /* --- Типографика --- */
+  --font: 'Onest', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* --- Радиусы --- */
+  --r1: 12px;
+  --r2: 16px;
+  --r3: 22px;
+  --r4: 28px;
+  --r5: 34px;
+  --rf: 999px;
+
+  /* --- Отступы --- */
+  --sp1: 4px;
+  --sp2: 8px;
+  --sp3: 12px;
+  --sp4: 16px;
+  --sp5: 24px;
+  --sp6: 32px;
+  --sp7: 48px;
+
+  /* --- Длительности --- */
+  --tap: .15s;
+  --d1: .25s;
+  --d2: .45s;
+  --d3: .65s;
+
+  /* --- Тени --- */
+  --e1: 0 2px 8px rgba(30,30,60,.1);
+  --e2: 0 8px 20px rgba(30,30,60,.14);
+  --e3: 0 16px 40px rgba(30,30,60,.18);
+
+  /* --- Кривые (fallback для браузеров без linear()) --- */
+  --spring: cubic-bezier(.34,1.3,.64,1);
+  --bounce: cubic-bezier(.3,1.6,.5,1);
+  --sheet: cubic-bezier(.32,.72,0,1);
+  --gentle: cubic-bezier(.25,1,.4,1);
+}
+
+/* Точные пружины через linear() — только там, где поддерживается */
+@supports (transition-timing-function: linear(0,1)) {
+  :root {
+    --spring: linear(0,.05 2%,.25 6%,.6 12%,.9 19%,1.04 26%,1.06 31%,1.03 38%,.995 48%,.99 56%,1.004 70%,1);
+    --bounce: linear(0,.009,.035 2.1%,.141,.281 6.7%,.723 12.9%,.938 16.7%,1.017,1.077,1.121,1.149 24.3%,1.159,1.163,1.161,1.154 29.9%,1.129 32.8%,1.051 39.6%,1.017 43.1%,.991,.977 51%,.974 53.8%,.975 57.1%,.997 69.8%,1.003 76.9%,1.004 91.4%,1);
+  }
+}
+
+/* --- Тёмная тема (авто) --- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #111218;     --on: #E5E2EA;
+    --muted: #A5A6B8;  --outline: rgba(255,255,255,.18);
+    --track: rgba(255,255,255,.1);  --off: rgba(160,160,180,.35);
+    --primary: #B9BFFF; --on-primary: #0E1A9E;
+    --p: #333FCB;   --on-p: #DDE0FF;
+    --s: #43445A;   --on-s: #E1E0F9;
+    --t: #75305F;   --on-t: #FFD8F0;
+    --n: #252731;   --on-n: #C9C9D6;
+    --err: #FFB3B8;    --on-err: #68000F;
+    --err-c: #8C0021;  --on-err-c: #FFD9DE;
+    --ok: #8FDBAE;     --on-ok: #00391F;
+    --ok-c: #00522F;   --on-ok-c: #C6F2D8;
+    --warn: #F7C575;   --on-warn: #452B00;
+    --warn-c: #664100; --on-warn-c: #FFE2AE;
+    --glass: rgba(36,38,50,.4);
+    --glass2: rgba(30,32,44,.7);
+    --glass-solid: #1B1C26;
+    --edge: rgba(255,255,255,.2);
+    --sh: rgba(0,0,0,.5);
+    --glow: rgba(255,255,255,.2);
+    --thumb: rgba(255,255,255,.25);
+    --e1: 0 2px 8px rgba(0,0,0,.3);
+    --e2: 0 8px 20px rgba(0,0,0,.4);
+    --e3: 0 16px 40px rgba(0,0,0,.5);
+  }
+}
+
+/* --- Форсированная тёмная --- */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111218;     --on: #E5E2EA;
+  --muted: #A5A6B8;  --outline: rgba(255,255,255,.18);
+  --track: rgba(255,255,255,.1); --off: rgba(160,160,180,.35);
+  --primary: #B9BFFF; --on-primary: #0E1A9E;
+  --p: #333FCB;  --on-p: #DDE0FF;
+  --s: #43445A;  --on-s: #E1E0F9;
+  --t: #75305F;  --on-t: #FFD8F0;
+  --n: #252731;  --on-n: #C9C9D6;
+  --err: #FFB3B8;   --on-err: #68000F;
+  --err-c: #8C0021; --on-err-c: #FFD9DE;
+  --ok: #8FDBAE;    --on-ok: #00391F;
+  --ok-c: #00522F;  --on-ok-c: #C6F2D8;
+  --warn: #F7C575;  --on-warn: #452B00;
+  --warn-c: #664100; --on-warn-c: #FFE2AE;
+  --glass: rgba(36,38,50,.4);
+  --glass2: rgba(30,32,44,.7);
+  --glass-solid: #1B1C26;
+  --edge: rgba(255,255,255,.2);
+  --sh: rgba(0,0,0,.5);
+  --glow: rgba(255,255,255,.2);
+  --thumb: rgba(255,255,255,.25);
+  --e1: 0 2px 8px rgba(0,0,0,.3);
+  --e2: 0 8px 20px rgba(0,0,0,.4);
+  --e3: 0 16px 40px rgba(0,0,0,.5);
+}
+
+:root[data-theme="light"] { color-scheme: light; }
+
+/* --- Disable all motion when user prefers --- */
+@media (prefers-reduced-motion: reduce) {
+  *,*::before,*::after { transition: none !important; animation: none !important; }
+}

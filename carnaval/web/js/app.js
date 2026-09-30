@@ -1,0 +1,159 @@
+/**
+ * app.js — точка входа Carnaval Mini App.
+ * Vanilla ES-модули, без внешних фреймворков и сборщиков.
+ */
+
+import { auth } from './api.js';
+import { tg } from './tg.js';
+import { router } from './router.js';
+import { initLocale, t } from './i18n.js';
+import { hideSplash } from './ui/splash.js';
+import { initGlassEffect } from './ui/glass.js';
+import { initSheet } from './ui/sheet.js';
+import { startSSE, onEvent, onConnectionStatus } from './sse.js';
+import { showToast } from './ui/toast.js';
+
+document.documentElement.classList.add('js');
+
+// 1. Инициализация локали и темы Telegram
+initLocale();
+document.documentElement.setAttribute('data-theme', tg.colorScheme);
+tg.onThemeChange(() => {
+  document.documentElement.setAttribute('data-theme', tg.colorScheme);
+});
+
+async function main() {
+  // 2. Telegram WebApp готовность
+  tg.ready();
+
+  // 3. Проверка запуска вне Telegram
+  const hasInitData = Boolean(tg.initData && tg.initData.trim());
+  const isDev = Boolean(typeof window !== 'undefined' && window.__CARNAVAL_DEV);
+
+  // Инициализация глобальных UI компонентов (стекло, шторка)
+  initGlassEffect();
+  initSheet();
+
+  if (!hasInitData && !isDev) {
+    // Открыто в обычном браузере без Telegram WebApp
+    hideSplash();
+    renderUnauthorizedScreen(true);
+    return;
+  }
+
+  // 4. Авторизация по initData
+  const ok = await auth(tg.initData);
+
+  if (!ok) {
+    hideSplash();
+    renderUnauthorizedScreen(false);
+    return;
+  }
+
+  // 5. Инициализация SPA роутера (рендерит дашборд)
+  await router.init();
+
+  // 6. Deep link проверка (start_param из Telegram или ?startapp=...)
+  const urlParams = new URLSearchParams(window.location.search);
+  const startParam = tg.initDataUnsafe?.start_param || urlParams.get('startapp') || '';
+  if (startParam.startsWith('order_')) {
+    const orderId = startParam.replace('order_', '');
+    router.navigate('orders');
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('open_order_detail', { detail: { orderId } }));
+    }, 400);
+  } else if (startParam.startsWith('chat_')) {
+    const chatId = startParam.replace('chat_', '');
+    router.navigate('chats');
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('open_chat_history', { detail: { chatId } }));
+    }, 400);
+  }
+
+  // 7. Скрыть splash-экран
+  hideSplash();
+
+  // 8. Запуск SSE потока событий
+  startSSE();
+
+  onConnectionStatus((status) => {
+    const offlineIndicator = document.getElementById('offline-badge');
+    if (offlineIndicator) {
+      offlineIndicator.style.display = status === 'connected' ? 'none' : 'inline-flex';
+    }
+  });
+
+  onEvent((ev) => {
+    if (ev.type === 'order.new') {
+      showToast(`📦 Новый заказ #${ev.data?.order_id || ''}`, 'info');
+      tg.haptic.notification('success');
+    } else if (ev.type === 'message.new') {
+      showToast(`💬 ${ev.data?.chat_name || 'Чат'}: ${ev.data?.text || ''}`.slice(0, 50), 'info');
+      tg.haptic.impact('light');
+    }
+  });
+}
+
+/**
+ * Экран для неавторизованных пользователей или запуска вне Telegram.
+ */
+function renderUnauthorizedScreen(isOutsideTelegram = false) {
+  const app = document.getElementById('app');
+  if (!app) return;
+
+  if (isOutsideTelegram) {
+    app.innerHTML = `
+      <div class="page" style="min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px">
+        <div class="panel rv in" style="max-width: 420px; width: 100%; text-align: center; padding: 36px 24px">
+          <div style="width: 64px; height: 64px; margin: 0 auto 16px; border-radius: 50%; background: var(--p-c); color: var(--primary); display: grid; place-items: center">
+            <svg style="width: 32px; height: 32px" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <h2 style="margin: 0 0 12px; font-size: 22px">Откройте из Telegram</h2>
+          <p class="tx" style="margin: 0 auto 24px; font-size: 14px; line-height: 1.5">
+            Carnaval — это Telegram Mini App для управления ботом FunPay Cardinal.<br>
+            Для безопасного доступа запустите приложение через кнопку меню в вашем Telegram-боте.
+          </p>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  // Если открыто в Telegram, но нет в authorized_users
+  app.innerHTML = `
+    <div class="page" style="min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px">
+      <div class="panel rv in" style="max-width: 420px; width: 100%; text-align: center; padding: 36px 24px">
+        <div style="width: 64px; height: 64px; margin: 0 auto 16px; border-radius: 50%; background: var(--err-c); color: var(--err); display: grid; place-items: center">
+          <svg style="width: 32px; height: 32px" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <h2 style="margin: 0 0 12px; font-size: 22px">Доступ ограничен</h2>
+        <p class="tx" style="margin: 0 auto 24px; font-size: 14px; line-height: 1.5">
+          Ваш Telegram ID отсутствует в списке администраторов бота.<br>
+          Отправьте боту секретный пароль в чат, чтобы получить доступ к панели.
+        </p>
+        <button class="btn press" id="open-bot-btn" style="width: 100%; background: var(--primary); color: var(--on-primary)">
+          Вернуться в чат с ботом
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('open-bot-btn')?.addEventListener('click', () => {
+    tg.haptic.impact('medium');
+    tg.close();
+  });
+}
+
+main().catch((err) => {
+  console.error('[Carnaval] fatal error', err);
+  hideSplash();
+  const app = document.getElementById('app');
+  if (app) {
+    app.innerHTML = `
+      <div class="empty" style="padding-top: 140px">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+        <p>Ошибка запуска приложения<br><small style="color:var(--err)">${err?.message || ''}</small></p>
+      </div>
+    `;
+  }
+});
