@@ -840,7 +840,7 @@ def send_bot_started_notification_handler(c: Cardinal, *args):
     """
     Отправляет уведомление о запуске бота в телеграм.
     """
-    if c.telegram is None:
+    if c.telegram is None or c.balance is None or not getattr(c.account, "is_authorized", False):
         return
     text = _("fpc_init", c.VERSION, c.account.username, c.account.id,
              c.balance.total_rub, c.balance.total_usd, c.balance.total_eur, c.account.active_sales)

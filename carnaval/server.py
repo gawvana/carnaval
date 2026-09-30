@@ -157,7 +157,10 @@ def build_app(allowed_origins: list[str] | None = None, serve_static: bool | Non
                 fp_connected = bool(getattr(c.account, "is_initiated", False) or getattr(c.account, "id", None))
             if hasattr(c, "telegram") and c.telegram:
                 is_alive_fn = getattr(c.telegram, "is_alive", None)
-                tg_connected = bool(is_alive_fn() if callable(is_alive_fn) else is_alive_fn)
+                if callable(is_alive_fn):
+                    tg_connected = bool(is_alive_fn())
+                else:
+                    tg_connected = bool(getattr(c.telegram, "bot", None))
         except Exception:
             pass
 

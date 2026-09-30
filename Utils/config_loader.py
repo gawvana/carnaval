@@ -68,7 +68,7 @@ def load_main_config(config_path: str):
     config = create_config_obj(config_path)
     values = {
         "FunPay": {
-            "golden_key": "any",
+            "golden_key": "any+empty",
             "user_agent": "any+empty",
             "autoRaise": ["0", "1"],
             "autoResponse": ["0", "1"],
