@@ -629,6 +629,25 @@ def create_configs_backup() -> bytes:
                     lower = fname.lower()
                     if lower.endswith((".key", ".secret", ".pem")) or "master" in lower or ".env" in lower:
                         continue
+                    if fname == "_main.cfg":
+                        try:
+                            from configparser import ConfigParser
+                            cp = ConfigParser(interpolation=None)
+                            cp.read(fpath, encoding="utf-8")
+                            if "Telegram" in cp and "token" in cp["Telegram"]:
+                                cp["Telegram"]["token"] = "MASKED_IN_BACKUP"
+                            if "Telegram" in cp and "secretPassword" in cp["Telegram"]:
+                                cp["Telegram"]["secretPassword"] = "MASKED_IN_BACKUP"
+                            if "FunPay" in cp and "golden_key" in cp["FunPay"]:
+                                cp["FunPay"]["golden_key"] = "MASKED_IN_BACKUP"
+                            if "Carnaval" in cp and "secretKey" in cp["Carnaval"]:
+                                cp["Carnaval"]["secretKey"] = "MASKED_IN_BACKUP"
+                            out_str = io.StringIO()
+                            cp.write(out_str)
+                            zf.writestr(arcname, out_str.getvalue().encode("utf-8"))
+                            continue
+                        except Exception:
+                            continue
                     fpath = os.path.join(root, fname)
                     arcname = os.path.relpath(fpath, start=".")
                     zf.write(fpath, arcname)
@@ -702,7 +721,7 @@ def restore_backup(zip_bytes: bytes) -> tuple[bool, str]:
 
 def restart_cardinal(confirm: bool = False) -> tuple[bool, str]:
     """
-    Перезапускает Cardinal через os.execv.
+    Перезапускает Cardinal (кросс-платформенно).
     Требует confirm=True.
     """
     if not confirm:
@@ -710,8 +729,16 @@ def restart_cardinal(confirm: bool = False) -> tuple[bool, str]:
 
     def _do_restart():
         import time as _time
+        import subprocess
         _time.sleep(0.5)
-        os.execv(sys.executable, [sys.executable] + sys.argv)
+        if sys.platform == "win32":
+            subprocess.Popen([sys.executable] + sys.argv)
+            os._exit(0)
+        else:
+            try:
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            except Exception:
+                os._exit(0)
 
     threading.Thread(target=_do_restart, daemon=True).start()
     return True, ""
@@ -728,7 +755,7 @@ def shutdown_cardinal(confirm: bool = False) -> tuple[bool, str]:
     def _do_shutdown():
         import time as _time
         _time.sleep(0.5)
-        os.kill(os.getpid(), signal.SIGTERM)
+        os._exit(0)
 
     threading.Thread(target=_do_shutdown, daemon=True).start()
     return True, ""
