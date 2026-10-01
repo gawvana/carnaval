@@ -19,11 +19,12 @@ from typing import AsyncGenerator, Optional
 
 logger = logging.getLogger("Carnaval.Bridge")
 
-# Глобальный event loop FastAPI
+# Глобальный event loop FastAPI и активные циклы
 _loop: asyncio.AbstractEventLoop | None = None
+_loops: set[asyncio.AbstractEventLoop] = set()
 
-# Активные подписчики SSE
-_subscribers: list[asyncio.Queue] = []
+# Активные подписчики SSE: пары (loop, queue)
+_subscribers: list[tuple[asyncio.AbstractEventLoop, asyncio.Queue]] = []
 _QUEUE_MAX = 64
 
 # Кольцевой буфер истории событий для Last-Event-ID (до 200 событий)
@@ -36,6 +37,7 @@ def set_loop(loop: asyncio.AbstractEventLoop) -> None:
     """Вызывается из lifespan FastAPI при старте."""
     global _loop
     _loop = loop
+    _loops.add(loop)
 
 
 def get_queue_size() -> int:
@@ -47,6 +49,7 @@ def emit(event_type: str, data: dict) -> None:
     """
     Отправить событие всем подписчикам SSE и сохранить в кольцевой буфер.
     Потокобезопасно: вызывается из любых потоков Cardinal.
+    Поддерживает множественные циклы событий без потери данных.
     """
     global _event_counter
     _event_counter += 1
@@ -59,23 +62,30 @@ def emit(event_type: str, data: dict) -> None:
     # Сохраняем в кольцевой буфер
     _history.append((eid, raw_event))
 
-    if _loop is None or _loop.is_closed():
-        return
+    dead = []
+    for lp, q in list(_subscribers):
+        if lp.is_closed():
+            dead.append((lp, q))
+            continue
 
-    def _put():
-        dead = []
-        for q in _subscribers:
-            try:
-                q.put_nowait(raw_event)
-            except asyncio.QueueFull:
-                dead.append(q)
-        for q in dead:
-            try:
-                _subscribers.remove(q)
-            except ValueError:
-                pass
+        def _make_put(queue=q):
+            def _put():
+                try:
+                    queue.put_nowait(raw_event)
+                except asyncio.QueueFull:
+                    pass
+            return _put
 
-    _loop.call_soon_threadsafe(_put)
+        try:
+            lp.call_soon_threadsafe(_make_put())
+        except Exception:
+            dead.append((lp, q))
+
+    for d in dead:
+        try:
+            _subscribers.remove(d)
+        except ValueError:
+            pass
 
 
 async def stream(last_event_id: Optional[int] = None) -> AsyncGenerator[str, None]:
@@ -84,8 +94,11 @@ async def stream(last_event_id: Optional[int] = None) -> AsyncGenerator[str, Non
     1. Если указан last_event_id — досылает пропущенные события из кольцевого буфера.
     2. Отправляет ': ping\\n\\n' при старте и каждые 15 сек при отсутствии активности.
     """
+    loop = asyncio.get_running_loop()
+    _loops.add(loop)
     q: asyncio.Queue = asyncio.Queue(maxsize=_QUEUE_MAX)
-    _subscribers.append(q)
+    sub = (loop, q)
+    _subscribers.append(sub)
 
     # Первый ping
     yield ": ping\n\n"
@@ -107,7 +120,7 @@ async def stream(last_event_id: Optional[int] = None) -> AsyncGenerator[str, Non
         pass
     finally:
         try:
-            _subscribers.remove(q)
+            _subscribers.remove(sub)
         except ValueError:
             pass
 
