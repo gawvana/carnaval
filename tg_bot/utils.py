@@ -83,7 +83,13 @@ def load_authorized_users() -> dict[int, dict[str, bool | None | str]]:
         except Exception:
             pass
 
-    admin_id_env = os.getenv("TG_ADMIN_ID") or os.getenv("ADMIN_ID")
+    admin_id_env = (
+        os.getenv("TG_ADMIN_ID")
+        or os.getenv("ADMIN_ID")
+        or os.getenv("TG_OWNER_ID")
+        or os.getenv("OWNER_ID")
+        or os.getenv("CARNAVAL_OWNER_ID")
+    )
     if admin_id_env:
         try:
             for aid in str(admin_id_env).split(","):

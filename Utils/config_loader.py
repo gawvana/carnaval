@@ -26,9 +26,13 @@ def check_param(param_name: str, section: SectionProxy, valid_values: list[str |
     raise_ex_if_not_exists == False - возвращает None. В любом другом случае возбуждает исключения.
     """
     if param_name not in list(section.keys()):
-        if raise_if_not_exists:
+        found_key = next((k for k in section.keys() if k.lower() == param_name.lower()), None)
+        if found_key is not None:
+            section[param_name] = section[found_key]
+        elif raise_if_not_exists:
             raise ParamNotFoundError(param_name)
-        return None
+        else:
+            return None
 
     value = section[param_name].strip()
 
@@ -51,7 +55,7 @@ def create_config_obj(config_path: str) -> ConfigParser:
 
     :return: объект конфига.
     """
-    config = ConfigParser(delimiters=(":",), interpolation=None)
+    config = ConfigParser(delimiters=(":", "="), interpolation=None)
     config.optionxform = str
     config.read_file(codecs.open(config_path, "r", "utf8"))
     return config
