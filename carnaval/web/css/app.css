@@ -380,19 +380,42 @@ body.open .sheet { visibility: visible; transform: translate(-50%,0); transition
 
 /* ── Switch ────────────────────────────────────────── */
 .sw {
-  position: relative; width: 52px; height: 32px; border-radius: 16px;
+  position: relative; display: inline-flex; align-items: center;
+  width: 52px; height: 32px; border-radius: 16px;
   background: var(--off); transition: background .3s;
+  cursor: pointer; border: none; padding: 0; margin: 0; outline: none;
+  box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none;
 }
-.sw[aria-checked=true] { background: var(--primary) }
-.sw i {
+.sw input[type="checkbox"],
+.sw input {
+  position: absolute; top: 0; left: 0; width: 0; height: 0;
+  opacity: 0; margin: 0; padding: 0; pointer-events: none;
+  appearance: none; -webkit-appearance: none;
+}
+.sw i,
+.sw .track {
   position: absolute; top: 2px; left: 2px;
   width: 28px; height: 28px; border-radius: 14px;
   background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.25);
   transition: transform .55s var(--spring), width .25s var(--spring);
+  pointer-events: none; display: block; box-sizing: border-box;
 }
-.sw[aria-checked=true] i { transform: translateX(20px) }
-.sw:active i { width: 36px }
-.sw[aria-checked=true]:active i { transform: translateX(12px) }
+.sw[aria-checked=true],
+.sw:has(input:checked) { background: var(--primary) }
+.sw[aria-checked=true] i,
+.sw[aria-checked=true] .track,
+.sw:has(input:checked) i,
+.sw:has(input:checked) .track,
+.sw input:checked ~ i,
+.sw input:checked ~ .track { transform: translateX(20px) }
+.sw:active i,
+.sw:active .track,
+.sw:has(input:checked):active i,
+.sw:has(input:checked):active .track { width: 36px }
+.sw[aria-checked=true]:active i,
+.sw[aria-checked=true]:active .track,
+.sw:has(input:checked):active i,
+.sw:has(input:checked):active .track { transform: translateX(12px) }
 
 /* ── Buttons ───────────────────────────────────────── */
 .btns { display: flex; gap: 10px }

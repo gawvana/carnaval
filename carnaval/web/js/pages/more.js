@@ -413,20 +413,23 @@ async function renderNotifications(body) {
     row.className = 'more-toggle-row';
     row.innerHTML = `
       <span class="more-toggle-label">${escHtml(info.label)}</span>
-      <label class="sw">
+      <label class="sw" role="switch" aria-checked="${Boolean(info.enabled)}">
         <input type="checkbox" ${info.enabled ? 'checked' : ''} aria-label="${escHtml(info.label)}">
-        <span class="track"></span>
+        <i></i>
       </label>
     `;
 
     const cb = row.querySelector('input');
+    const lbl = row.querySelector('.sw');
     cb.addEventListener('change', async () => {
       haptic('impact', 'light');
+      if (lbl) lbl.setAttribute('aria-checked', String(cb.checked));
       try {
         await api.updateNotification(section, key, cb.checked);
         showToast(cb.checked ? 'Включено' : 'Выключено', 'success');
       } catch (e) {
         cb.checked = !cb.checked;
+        if (lbl) lbl.setAttribute('aria-checked', String(cb.checked));
         showToast('Ошибка сохранения: ' + e.message, 'error');
       }
     });
@@ -467,24 +470,28 @@ async function renderGreetings(body) {
     }
 
     if (meta.type === 'toggle') {
+      const isChecked = Boolean(info.value === '1' || info.value === 1 || info.value === true);
       const row = document.createElement('div');
       row.className = 'more-toggle-row';
       row.innerHTML = `
         <span class="more-toggle-label">${escHtml(meta.label)}</span>
-        <label class="sw">
-          <input type="checkbox" ${info.value ? 'checked' : ''} aria-label="${escHtml(meta.label)}">
-          <span class="track"></span>
+        <label class="sw" role="switch" aria-checked="${isChecked}">
+          <input type="checkbox" ${isChecked ? 'checked' : ''} aria-label="${escHtml(meta.label)}">
+          <i></i>
         </label>
       `;
 
       const cb = row.querySelector('input');
+      const lbl = row.querySelector('.sw');
       cb.addEventListener('change', async () => {
         haptic('impact', 'light');
+        if (lbl) lbl.setAttribute('aria-checked', String(cb.checked));
         try {
           await api.updateGreeting(section, key, cb.checked ? '1' : '0');
           showToast('Параметр сохранён', 'success');
         } catch (e) {
           cb.checked = !cb.checked;
+          if (lbl) lbl.setAttribute('aria-checked', String(cb.checked));
           showToast('Ошибка: ' + e.message, 'error');
         }
       });
@@ -661,9 +668,9 @@ async function renderPlugins(body) {
             <button class="more-btn-sm more-btn-danger press pl-del" data-uuid="${escHtml(pl.uuid)}" data-name="${escHtml(pl.name)}" style="display:inline-flex;align-items:center;gap:4px" type="button">
               ${getIcon('trash')} Удалить
             </button>
-            <label class="sw">
+            <label class="sw" role="switch" aria-checked="${Boolean(pl.enabled)}">
               <input type="checkbox" class="pl-toggle" data-uuid="${escHtml(pl.uuid)}" ${pl.enabled ? 'checked' : ''} aria-label="Включить плагин ${escHtml(pl.name)}">
-              <span class="track"></span>
+              <i></i>
             </label>
           </div>
         </div>
@@ -678,12 +685,15 @@ async function renderPlugins(body) {
   listEl.addEventListener('change', async (e) => {
     const cb = e.target.closest('.pl-toggle');
     if (!cb) return;
+    const lbl = cb.closest('.sw');
     haptic('impact', 'light');
+    if (lbl) lbl.setAttribute('aria-checked', String(cb.checked));
     try {
       await api.togglePlugin(cb.dataset.uuid);
       showToast(cb.checked ? 'Плагин активирован' : 'Плагин деактивирован', 'success');
     } catch (ex) {
       cb.checked = !cb.checked;
+      if (lbl) lbl.setAttribute('aria-checked', String(cb.checked));
       showToast('Ошибка: ' + ex.message, 'error');
     }
   });
@@ -849,9 +859,9 @@ async function renderSecurity(body) {
       <div class="more-card-title">Прокси FunPay</div>
       <div class="more-toggle-row" style="padding-top:0">
         <span class="more-toggle-label">Использовать прокси</span>
-        <label class="sw">
+        <label class="sw" role="switch" aria-checked="${Boolean(proxyInfo.enabled)}">
           <input type="checkbox" id="proxy-en" ${proxyInfo.enabled ? 'checked' : ''} aria-label="Включить прокси">
-          <span class="track"></span>
+          <i></i>
         </label>
       </div>
       ${proxyInfo.current_proxy ? `
@@ -998,12 +1008,15 @@ async function renderSecurity(body) {
 
   // Прокси: переключатель
   body.querySelector('#proxy-en')?.addEventListener('change', async (e) => {
+    const lbl = e.target.closest('.sw');
     haptic('impact', 'light');
+    if (lbl) lbl.setAttribute('aria-checked', String(e.target.checked));
     try {
       await api.setProxyEnabled(e.target.checked);
       showToast(e.target.checked ? 'Прокси включён' : 'Прокси выключен', 'success');
     } catch (ex) {
       e.target.checked = !e.target.checked;
+      if (lbl) lbl.setAttribute('aria-checked', String(e.target.checked));
       showToast('Ошибка: ' + ex.message, 'error');
     }
   });

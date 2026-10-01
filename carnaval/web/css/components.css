@@ -381,40 +381,91 @@ body.open .sheet {
 /* ── Переключатель (Switch) ── */
 .sw {
   position: relative;
+  display: inline-flex;
+  align-items: center;
   width: 52px;
   height: 32px;
   border-radius: 16px;
   background: var(--off);
-  transition: background .3s;
+  transition: background .3s cubic-bezier(0.16, 1, 0.3, 1);
   flex: none;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  margin: 0;
+  outline: none;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
 }
 
-.sw[aria-checked=true] {
-  background: var(--primary);
+/* Скрываем нативный input checkbox внутри .sw */
+.sw input[type="checkbox"],
+.sw input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
-.sw i {
+/* Ползунок (knob) — поддерживает как тег <i>, так и тег .track */
+.sw i,
+.sw .track {
   position: absolute;
   top: 2px;
   left: 2px;
   width: 28px;
   height: 28px;
   border-radius: 14px;
-  background: #fff;
+  background: #ffffff;
   box-shadow: 0 2px 6px rgba(0, 0, 0, .25);
-  transition: transform .55s var(--spring), width .25s var(--spring);
+  transition: transform .55s var(--spring, cubic-bezier(0.34, 1.56, 0.64, 1)), width .25s var(--spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+  pointer-events: none;
+  display: block;
+  box-sizing: border-box;
 }
 
-.sw[aria-checked=true] i {
+/* Активное состояние кнопки с aria-checked */
+.sw[aria-checked="true"] {
+  background: var(--primary);
+}
+.sw[aria-checked="true"] i,
+.sw[aria-checked="true"] .track {
   transform: translateX(20px);
 }
-
-.sw:active i {
+.sw:active i,
+.sw:active .track {
   width: 36px;
 }
-
-.sw[aria-checked=true]:active i {
+.sw[aria-checked="true"]:active i,
+.sw[aria-checked="true"]:active .track {
   transform: translateX(12px);
+}
+
+/* Активное состояние при использовании <label class="sw"><input type="checkbox" checked></label> */
+.sw:has(input:checked) {
+  background: var(--primary);
+}
+.sw:has(input:checked) i,
+.sw:has(input:checked) .track {
+  transform: translateX(20px);
+}
+.sw:has(input:checked):active i,
+.sw:has(input:checked):active .track {
+  transform: translateX(12px);
+}
+
+/* Fallback селекторы для WebKit / старых браузеров без :has */
+.sw input:checked ~ i,
+.sw input:checked ~ .track {
+  transform: translateX(20px);
 }
 
 /* ── Кнопки (Buttons) ── */
