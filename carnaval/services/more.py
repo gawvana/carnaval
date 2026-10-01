@@ -394,14 +394,18 @@ def set_proxy_enabled(enabled: bool) -> tuple[bool, str]:
 # Авторизованные пользователи
 # ---------------------------------------------------------------------------
 
-def get_authorized_users() -> list[int]:
-    """Возвращает список авторизованных Telegram user ID."""
+def get_authorized_users() -> list[dict]:
+    """Возвращает список авторизованных пользователей с метаданными."""
     cardinal = get_cardinal()
     tg = cardinal.telegram
     if not tg:
         return []
     with _AUTH_USERS_LOCK:
-        return list(tg.authorized_users)
+        auth_users = tg.authorized_users
+        if isinstance(auth_users, dict):
+            return [{'user_id': uid, 'data': data} for uid, data in auth_users.items()]
+        # Fallback for list type
+        return [{'user_id': uid, 'data': {}} for uid in auth_users]
 
 
 def add_authorized_user(user_id: int) -> tuple[bool, str]:
@@ -412,17 +416,16 @@ def add_authorized_user(user_id: int) -> tuple[bool, str]:
         return False, "Telegram-бот не запущен"
 
     with _AUTH_USERS_LOCK:
-        if user_id in tg.authorized_users:
+        auth_users = tg.authorized_users
+        if user_id in auth_users or str(user_id) in auth_users:
             return False, "Пользователь уже авторизован"
-        tg.authorized_users.append(user_id)
-        # Сохраняем в конфиг
+        auth_users[user_id] = {}
+        # Сохраняем в файл через utils
         try:
-            cardinal.MAIN_CFG["Telegram"]["authorizedUsers"] = ",".join(
-                str(uid) for uid in tg.authorized_users
-            )
-            cardinal.save_config(cardinal.MAIN_CFG, "configs/_main.cfg")
+            from tg_bot.utils import save_authorized_users
+            save_authorized_users(auth_users)
         except Exception as e:
-            tg.authorized_users.remove(user_id)
+            del auth_users[user_id]
             return False, str(e)
     return True, ""
 

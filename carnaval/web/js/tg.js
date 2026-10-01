@@ -27,6 +27,14 @@ export const tg = {
     return twa?.initData ?? '';
   },
 
+  get initDataUnsafe() {
+    return twa?.initDataUnsafe ?? {};
+  },
+
+  get startParam() {
+    return twa?.initDataUnsafe?.start_param ?? null;
+  },
+
   get user() {
     return twa?.initDataUnsafe?.user ?? null;
   },

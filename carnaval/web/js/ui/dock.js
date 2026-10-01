@@ -4,7 +4,7 @@
  */
 
 import { tg } from '../tg.js';
-import { openSheet } from './sheet.js';
+import { openSheet, closeSheet } from './sheet.js';
 import { t } from '../i18n.js';
 
 export function renderDock(tabs, onSelect) {
