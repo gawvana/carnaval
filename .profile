@@ -1,0 +1,3 @@
+export TMPDIR=.
+export PIP_NO_CACHE_DIR=1
+export PIP_PREFER_BINARY=1
