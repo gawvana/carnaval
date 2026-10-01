@@ -117,6 +117,20 @@ async function connect() {
     });
 
     if (!response.ok) {
+      if (response.status === 401) {
+        try {
+          const { tg } = await import('./tg.js');
+          const { auth } = await import('./api.js');
+          if (tg && tg.initData) {
+            const reauth = await auth(tg.initData);
+            if (reauth && reauth.ok !== false && (reauth.token || reauth.csrf_token)) {
+              console.log('[SSE] Сессия успешно обновлена после 401, переподключение...');
+              setTimeout(connect, 400);
+              return;
+            }
+          }
+        } catch (_) {}
+      }
       throw new Error(`SSE HTTP ${response.status}`);
     }
 

@@ -110,7 +110,7 @@ export async function request(method, path, options = {}) {
       try {
         console.warn('[API] 401 получен — попытка авто-релогина...');
         const reAuthOk = await auth(tg.initData);
-        if (reAuthOk) {
+        if (reAuthOk && reAuthOk.ok !== false && (reAuthOk.token || reAuthOk.csrf_token)) {
           isRelogging = false;
           // Повторяем исходный запрос с новым токеном без повторного релогина
           return await request(method, path, { ...options, allowRelogin: false });
