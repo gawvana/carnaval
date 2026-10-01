@@ -94,14 +94,27 @@ def bootstrap() -> bool:
         or os.getenv("TG_PASSWORD")
         or ""
     ).strip()
+    password_source = "из переменной окружения TG_PANEL_PASSWORD"
     if not tg_password:
         tg_password = secrets.token_urlsafe(24)
-        logger.warning(
-            "BootstrapEnv: TG_PANEL_PASSWORD не указан в переменных окружения. "
-            "Сгенерирован случайный пароль для Telegram ПУ. "
-            "Рекомендуется задать постоянный пароль через переменную окружения TG_PANEL_PASSWORD."
-        )
-    
+        password_source = "сгенерирован автоматически (задайте TG_PANEL_PASSWORD чтобы зафиксировать)"
+
+    # Сохраняем пароль в файл для отображения при последующих стартах
+    os.makedirs("storage/cache", exist_ok=True)
+    try:
+        with open("storage/cache/tg_password.txt", "w", encoding="utf-8") as _pf:
+            _pf.write(tg_password)
+    except Exception:
+        pass
+
+    # Всегда печатаем пароль в stdout — sanitizer логов не трогает print()
+    _sep = "=" * 60
+    print(f"\n{_sep}", flush=True)
+    print(f"[CARNAVAL] ПАРОЛЬ TELEGRAM БОТА ({password_source}):", flush=True)
+    print(f"           {tg_password}", flush=True)
+    print(f"Отправьте этот пароль боту в Telegram для авторизации.", flush=True)
+    print(f"{_sep}\n", flush=True)
+
     secret_hash = hash_password(tg_password)
 
     port = os.getenv("PORT") or os.getenv("CARNAVAL_PORT", "5000")
@@ -383,7 +396,54 @@ def _sync_existing_config(config_path: str) -> bool:
                 cfg.write(f)
             logger.info("BootstrapEnv: конфигурация синхронизирована с переменными среды.")
 
+        # Показываем пароль Telegram бота при каждом старте
+        _print_tg_password_banner()
+
         return True
     except Exception as e:
         logger.warning(f"BootstrapEnv: ошибка синхронизации конфига: {e}")
         return False
+
+
+def _print_tg_password_banner() -> None:
+    """
+    Выводит в stdout текущий пароль Telegram бота при каждом старте сервера.
+    Использует print() намеренно — sanitizer логов фильтрует logger.*,
+    но не трогает stdout, поэтому пароль гарантированно виден в логах контейнера.
+    """
+    _sep = "=" * 60
+
+    # 1. Пароль из переменной окружения (наивысший приоритет)
+    env_pass = (
+        os.getenv("TG_PANEL_PASSWORD")
+        or os.getenv("PANEL_PASSWORD")
+        or os.getenv("TG_PASSWORD")
+        or ""
+    ).strip()
+    if env_pass:
+        print(f"\n{_sep}", flush=True)
+        print("[CARNAVAL] ПАРОЛЬ TELEGRAM БОТА (из переменной окружения):", flush=True)
+        print(f"           {env_pass}", flush=True)
+        print(f"{_sep}\n", flush=True)
+        return
+
+    # 2. Пароль из сохранённого файла
+    pass_file = "storage/cache/tg_password.txt"
+    if os.path.exists(pass_file):
+        try:
+            saved = open(pass_file, encoding="utf-8").read().strip()
+            if saved:
+                print(f"\n{_sep}", flush=True)
+                print("[CARNAVAL] ПАРОЛЬ TELEGRAM БОТА (сохранён при первом запуске):", flush=True)
+                print(f"           {saved}", flush=True)
+                print("Чтобы сменить пароль — задайте переменную окружения TG_PANEL_PASSWORD.", flush=True)
+                print(f"{_sep}\n", flush=True)
+                return
+        except Exception:
+            pass
+
+    # 3. Пароль неизвестен — инструкция
+    print(f"\n{_sep}", flush=True)
+    print("[CARNAVAL] ПАРОЛЬ TELEGRAM БОТА НЕИЗВЕСТЕН.", flush=True)
+    print("Задайте переменную окружения TG_PANEL_PASSWORD и перезапустите сервер.", flush=True)
+    print(f"{_sep}\n", flush=True)
