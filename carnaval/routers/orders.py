@@ -39,8 +39,8 @@ async def list_orders(
         data = await orders_svc.get_orders(status=status, start_from=offset, limit=limit)
         return JSONResponse(data)
     except Exception as e:
-        logger.error(f"Failed to fetch orders: {e}")
-        return JSONResponse({"error": "orders_fetch_failed", "message": str(e)}, status_code=500)
+        logger.warning(f"Failed to fetch orders: {e}")
+        return JSONResponse({"orders": [], "next_order_id": None, "funpay_connected": False, "error": "orders_fetch_failed", "message": str(e)}, status_code=200)
 
 
 @router.get("/orders/{order_id}")
@@ -56,8 +56,8 @@ async def get_order_details(
             return JSONResponse({"error": "not_found", "message": "Order not found"}, status_code=404)
         return JSONResponse(order)
     except Exception as e:
-        logger.error(f"Failed to fetch order {order_id}: {e}")
-        return JSONResponse({"error": "order_fetch_failed", "message": str(e)}, status_code=500)
+        logger.warning(f"Failed to fetch order {order_id}: {e}")
+        return JSONResponse({"error": "order_fetch_failed", "message": str(e)}, status_code=400)
 
 
 @router.post("/orders/{order_id}/refund")

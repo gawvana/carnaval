@@ -485,31 +485,34 @@ async def get_funpay_lots(refresh: bool = False) -> list[dict[str, Any]]:
     """Получить список лотов продавца с FunPay."""
     cardinal = get_cardinal()
     acc = cardinal.account
-    if not acc:
+    if not acc or not getattr(acc, "id", None):
         return []
 
     def _fetch():
-        if refresh or not getattr(cardinal, "profile", None):
-            cardinal.update_lots_and_categories()
-        profile = getattr(cardinal, "profile", None)
-        if not profile:
-            profile = acc.get_user(acc.id)
-            cardinal.profile = profile
+        try:
+            if refresh or not getattr(cardinal, "profile", None):
+                cardinal.update_lots_and_categories()
+            profile = getattr(cardinal, "profile", None)
+            if not profile and acc and getattr(acc, "id", None):
+                profile = acc.get_user(acc.id)
+                cardinal.profile = profile
 
-        lots = []
-        if profile and hasattr(profile, "get_sorted_lots"):
-            sorted_lots = profile.get_sorted_lots(1)
-            for lot_id, lot in sorted_lots.items():
-                lots.append({
-                    "id": str(lot_id),
-                    "description": getattr(lot, "description", ""),
-                    "price": getattr(lot, "price", 0.0),
-                    "currency": str(getattr(lot, "currency", "")),
-                    "server": getattr(lot, "server", None),
-                    "side": getattr(lot, "side", None),
-                    "subcategory_name": getattr(lot, "subcategory_name", ""),
-                    "title": getattr(lot, "title", getattr(lot, "description", "")),
-                })
-        return lots
+            lots = []
+            if profile and hasattr(profile, "get_sorted_lots"):
+                sorted_lots = profile.get_sorted_lots(1)
+                for lot_id, lot in sorted_lots.items():
+                    lots.append({
+                        "id": str(lot_id),
+                        "description": getattr(lot, "description", ""),
+                        "price": getattr(lot, "price", 0.0),
+                        "currency": str(getattr(lot, "currency", "")),
+                        "server": getattr(lot, "server", None),
+                        "side": getattr(lot, "side", None),
+                        "subcategory_name": getattr(lot, "subcategory_name", ""),
+                        "title": getattr(lot, "title", getattr(lot, "description", "")),
+                    })
+            return lots
+        except Exception:
+            return []
 
     return await asyncio.to_thread(_fetch)

@@ -72,8 +72,8 @@ async def get_orders(status: Optional[str] = None, start_from: Optional[str] = N
     """
     cardinal = get_cardinal()
     acc = cardinal.account
-    if not acc:
-        return {"orders": [], "next_order_id": None}
+    if not acc or not getattr(acc, "id", None):
+        return {"orders": [], "next_order_id": None, "funpay_connected": False}
 
     include_paid = True
     include_closed = True
@@ -98,27 +98,34 @@ async def get_orders(status: Optional[str] = None, start_from: Optional[str] = N
         )
         return next_id, orders_list[:limit]
 
-    next_order_id, orders = await asyncio.to_thread(_fetch)
-    return {
-        "orders": [_order_to_dict(o) for o in orders],
-        "next_order_id": next_order_id,
-    }
+    try:
+        next_order_id, orders = await asyncio.to_thread(_fetch)
+        return {
+            "orders": [_order_to_dict(o) for o in orders],
+            "next_order_id": next_order_id,
+            "funpay_connected": True,
+        }
+    except Exception as e:
+        return {"orders": [], "next_order_id": None, "funpay_connected": False, "error": str(e)}
 
 
 async def get_order(order_id: str) -> Optional[dict[str, Any]]:
     """Получить детальную информацию о заказе."""
     cardinal = get_cardinal()
     acc = cardinal.account
-    if not acc:
+    if not acc or not getattr(acc, "id", None):
         return None
 
     def _fetch():
         return acc.get_order(order_id)
 
-    order = await asyncio.to_thread(_fetch)
-    if not order:
+    try:
+        order = await asyncio.to_thread(_fetch)
+        if not order:
+            return None
+        return _order_detail_to_dict(order)
+    except Exception:
         return None
-    return _order_detail_to_dict(order)
 
 
 async def refund_order(order_id: str, confirm: bool = False) -> tuple[bool, str]:
@@ -131,8 +138,8 @@ async def refund_order(order_id: str, confirm: bool = False) -> tuple[bool, str]
 
     cardinal = get_cardinal()
     acc = cardinal.account
-    if not acc:
-        return False, "FunPay account not initialized"
+    if not acc or not getattr(acc, "id", None):
+        return False, "FunPay account not connected"
 
     def _exec():
         acc.refund(order_id)
@@ -148,8 +155,8 @@ async def send_review_reply(order_id: str, text: str, rating: int = 5) -> tuple[
     """Отправить ответ на отзыв к заказу."""
     cardinal = get_cardinal()
     acc = cardinal.account
-    if not acc:
-        return False, "FunPay account not initialized"
+    if not acc or not getattr(acc, "id", None):
+        return False, "FunPay account not connected"
 
     def _exec():
         return acc.send_review(order_id, text, rating)
@@ -165,8 +172,8 @@ async def delete_review_reply(order_id: str) -> tuple[bool, str]:
     """Удалить ответ на отзыв к заказу."""
     cardinal = get_cardinal()
     acc = cardinal.account
-    if not acc:
-        return False, "FunPay account not initialized"
+    if not acc or not getattr(acc, "id", None):
+        return False, "FunPay account not connected"
 
     def _exec():
         return acc.delete_review(order_id)

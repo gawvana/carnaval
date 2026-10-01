@@ -33,8 +33,8 @@ async def list_chats(
         chats = await chats_svc.get_chats(update=update)
         return JSONResponse({"chats": chats})
     except Exception as e:
-        logger.error(f"Failed to fetch chats: {e}")
-        return JSONResponse({"error": "chats_fetch_failed", "message": str(e)}, status_code=500)
+        logger.warning(f"Failed to fetch chats: {e}")
+        return JSONResponse({"chats": [], "funpay_connected": False, "error": "chats_fetch_failed", "message": str(e)}, status_code=200)
 
 
 @router.get("/chats/{chat_id}/history")
@@ -49,8 +49,8 @@ async def chat_history(
         messages = await chats_svc.get_chat_history(chat_id, last_message_id=before)
         return JSONResponse({"messages": messages})
     except Exception as e:
-        logger.error(f"Failed to fetch chat history for {chat_id}: {e}")
-        return JSONResponse({"error": "history_fetch_failed", "message": str(e)}, status_code=500)
+        logger.warning(f"Failed to fetch chat history for {chat_id}: {e}")
+        return JSONResponse({"messages": [], "error": "history_fetch_failed", "message": str(e)}, status_code=200)
 
 
 @router.post("/chats/{chat_id}/messages")

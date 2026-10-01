@@ -41,12 +41,15 @@ async def get_chats(update: bool = False) -> list[dict[str, Any]]:
     """Получить список последних переписок продавца."""
     cardinal = get_cardinal()
     acc = cardinal.account
-    if not acc:
+    if not acc or not getattr(acc, "id", None):
         return []
 
     def _fetch():
-        chats_dict = acc.get_chats(update=update)
-        return list(chats_dict.values()) if isinstance(chats_dict, dict) else list(chats_dict)
+        try:
+            chats_dict = acc.get_chats(update=update)
+            return list(chats_dict.values()) if isinstance(chats_dict, dict) else list(chats_dict)
+        except Exception:
+            return []
 
     chats = await asyncio.to_thread(_fetch)
     return [_chat_to_dict(c) for c in chats]
@@ -56,11 +59,14 @@ async def get_chat_history(chat_id: int | str, last_message_id: Optional[int] = 
     """Получить историю сообщений в чате."""
     cardinal = get_cardinal()
     acc = cardinal.account
-    if not acc:
+    if not acc or not getattr(acc, "id", None):
         return []
 
     def _fetch():
-        return acc.get_chat_history(chat_id, last_message_id=last_message_id)
+        try:
+            return acc.get_chat_history(chat_id, last_message_id=last_message_id)
+        except Exception:
+            return []
 
     messages = await asyncio.to_thread(_fetch)
     return [_message_to_dict(m) for m in (messages or [])]
