@@ -422,13 +422,22 @@ def test_startup_with_only_bot_token(monkeypatch):
     monkeypatch.delenv("FUNPAY_PASSWORD", raising=False)
     monkeypatch.delenv("PANEL_PASSWORD", raising=False)
     monkeypatch.setenv("TG_BOT_TOKEN", "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ")
+    SecretManager.delete_secret("golden_key")
+    from carnaval.deps import set_cardinal
+    set_cardinal(None)
+    from carnaval.services.account_lifecycle import lifecycle_manager, AccountState
+    lifecycle_manager.state = AccountState.NO_KEY
+    lifecycle_manager.profile = None
 
     app = build_app()
     client = TestClient(app)
 
     res = client.get("/health")
     assert res.status_code == 200
-    assert res.json()["status"] == "ok"
+    assert res.json()["status"] != "ok"  # Never return status: ok if FunPay is not connected!
+    assert res.json()["status"] in ("degraded", "healthy")
+    assert res.json()["funpay"] == "disconnected"
+    assert res.json()["telegram"] == "connected"
 
     res_setup = client.get("/api/setup/status")
     assert res_setup.status_code == 200

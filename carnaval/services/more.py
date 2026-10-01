@@ -87,6 +87,7 @@ GREETING_FIELDS: list[tuple[str, str, str]] = [
     ("ReviewReply", "star4ReplyText", "text"),
     ("ReviewReply", "star5Reply", "toggle"),
     ("ReviewReply", "star5ReplyText", "text"),
+    ("Other", "watermark", "text"),
 ]
 
 
@@ -127,7 +128,7 @@ def update_notification(section: str, key: str, enabled: bool) -> tuple[bool, st
 
 
 # ---------------------------------------------------------------------------
-# Приветствие / OrderConfirm / ReviewReply
+# Приветствие / OrderConfirm / ReviewReply / Watermark
 # ---------------------------------------------------------------------------
 
 def get_greetings() -> dict[str, Any]:
@@ -138,8 +139,10 @@ def get_greetings() -> dict[str, Any]:
 
     for section, key, field_type in GREETING_FIELDS:
         try:
-            if field_type == "toggle":
-                val: Any = cfg[section].getboolean(key, fallback=False)
+            if not cfg.has_section(section):
+                val: Any = False if field_type == "toggle" else ""
+            elif field_type == "toggle":
+                val = cfg[section].getboolean(key, fallback=False)
             else:
                 val = cfg[section].get(key, fallback="")
         except Exception:
@@ -149,10 +152,29 @@ def get_greetings() -> dict[str, Any]:
 
 
 def update_greeting(section: str, key: str, value: str) -> tuple[bool, str]:
-    """Обновляет параметр приветствия / OrderConfirm / ReviewReply."""
-    allowed_sections = {"Greetings", "OrderConfirm", "ReviewReply"}
+    """Обновляет параметр приветствия / OrderConfirm / ReviewReply / Watermark."""
+    allowed_sections = {"Greetings", "OrderConfirm", "ReviewReply", "Other"}
     if section not in allowed_sections:
         return False, f"Unknown section: {section}"
+
+    clean_val = str(value)
+
+    if section == "Greetings" and key == "greetingsCooldown":
+        try:
+            cd = float(clean_val.strip())
+            if cd < 0:
+                return False, "Кулдаун не может быть отрицательным"
+            clean_val = str(cd)
+        except ValueError:
+            return False, "Некорректное значение кулдауна (ожидается число)"
+    elif section == "Other" and key == "watermark":
+        w = clean_val.strip()
+        if w == "-":
+            clean_val = ""
+        elif re.fullmatch(r"\[[a-zA-Z]+]", w):
+            return False, "Водяной знак не может иметь формат [tag]"
+        else:
+            clean_val = w
 
     cardinal = get_cardinal()
     cfg = cardinal.MAIN_CFG
@@ -160,7 +182,7 @@ def update_greeting(section: str, key: str, value: str) -> tuple[bool, str]:
     with _NOTIFICATIONS_LOCK:
         if not cfg.has_section(section):
             cfg.add_section(section)
-        cfg.set(section, key, str(value).strip())
+        cfg.set(section, key, clean_val if key == "watermark" and clean_val == "" else clean_val.strip())
         try:
             cardinal.save_config(cfg, "configs/_main.cfg")
         except Exception as e:
@@ -168,9 +190,149 @@ def update_greeting(section: str, key: str, value: str) -> tuple[bool, str]:
     return True, ""
 
 
+def get_greetings_text() -> str:
+    cardinal = get_cardinal()
+    if cardinal.MAIN_CFG.has_section("Greetings"):
+        return cardinal.MAIN_CFG["Greetings"].get("greetingsText", "")
+    return ""
+
+
+def update_greetings_text(text: str) -> tuple[bool, str]:
+    return update_greeting("Greetings", "greetingsText", text)
+
+
+def get_greetings_cooldown() -> float:
+    cardinal = get_cardinal()
+    if cardinal.MAIN_CFG.has_section("Greetings"):
+        try:
+            return float(cardinal.MAIN_CFG["Greetings"].get("greetingsCooldown", "0"))
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
+def update_greetings_cooldown(cooldown: float) -> tuple[bool, str]:
+    if cooldown < 0:
+        return False, "Кулдаун не может быть отрицательным"
+    return update_greeting("Greetings", "greetingsCooldown", str(cooldown))
+
+
+def get_order_confirm_reply_text() -> str:
+    cardinal = get_cardinal()
+    if cardinal.MAIN_CFG.has_section("OrderConfirm"):
+        return cardinal.MAIN_CFG["OrderConfirm"].get("replyText", "")
+    return ""
+
+
+def update_order_confirm_reply_text(text: str) -> tuple[bool, str]:
+    return update_greeting("OrderConfirm", "replyText", text)
+
+
+def get_order_confirm_settings() -> dict[str, Any]:
+    cardinal = get_cardinal()
+    cfg = cardinal.MAIN_CFG
+    if not cfg.has_section("OrderConfirm"):
+        return {"sendReply": False, "replyText": "", "watermark": False}
+    return {
+        "sendReply": cfg["OrderConfirm"].getboolean("sendReply", fallback=False),
+        "replyText": cfg["OrderConfirm"].get("replyText", fallback=""),
+        "watermark": cfg["OrderConfirm"].getboolean("watermark", fallback=False),
+    }
+
+
+def get_review_reply_settings() -> dict[str, Any]:
+    cardinal = get_cardinal()
+    cfg = cardinal.MAIN_CFG
+    stars_dict = {}
+    for star in range(1, 6):
+        if cfg.has_section("ReviewReply"):
+            enabled = cfg["ReviewReply"].getboolean(f"star{star}Reply", fallback=False)
+            text = cfg["ReviewReply"].get(f"star{star}ReplyText", fallback="")
+        else:
+            enabled, text = False, ""
+        stars_dict[str(star)] = {
+            "star": star,
+            "enabled": enabled,
+            "text": text,
+        }
+    return {"stars": stars_dict}
+
+
+def get_review_reply_star(star: int) -> tuple[Optional[dict[str, Any]], Optional[str]]:
+    if not (1 <= star <= 5):
+        return None, "Рейтинг должен быть от 1 до 5"
+    cardinal = get_cardinal()
+    cfg = cardinal.MAIN_CFG
+    if cfg.has_section("ReviewReply"):
+        enabled = cfg["ReviewReply"].getboolean(f"star{star}Reply", fallback=False)
+        text = cfg["ReviewReply"].get(f"star{star}ReplyText", fallback="")
+    else:
+        enabled, text = False, ""
+    return {
+        "star": star,
+        "enabled": enabled,
+        "text": text,
+    }, None
+
+
+def update_review_reply_star(star: int, enabled: Optional[bool] = None, text: Optional[str] = None) -> tuple[bool, str]:
+    if not (1 <= star <= 5):
+        return False, "Рейтинг должен быть от 1 до 5"
+    cardinal = get_cardinal()
+    cfg = cardinal.MAIN_CFG
+    with _NOTIFICATIONS_LOCK:
+        if not cfg.has_section("ReviewReply"):
+            cfg.add_section("ReviewReply")
+        if enabled is not None:
+            cfg.set("ReviewReply", f"star{star}Reply", "1" if enabled else "0")
+        if text is not None:
+            cfg.set("ReviewReply", f"star{star}ReplyText", str(text))
+        try:
+            cardinal.save_config(cfg, "configs/_main.cfg")
+        except Exception as e:
+            return False, str(e)
+    return True, ""
+
+
+def get_watermark() -> str:
+    cardinal = get_cardinal()
+    if cardinal.MAIN_CFG.has_section("Other"):
+        return cardinal.MAIN_CFG["Other"].get("watermark", "")
+    return ""
+
+
+def update_watermark(watermark: str) -> tuple[bool, str]:
+    return update_greeting("Other", "watermark", watermark)
+
+
 # ---------------------------------------------------------------------------
 # Чёрный список
 # ---------------------------------------------------------------------------
+
+_BLACKLIST_REASONS_FILE = "storage/cache/blacklist_reasons.json"
+
+
+def _load_blacklist_reasons() -> dict[str, str]:
+    if not os.path.exists(_BLACKLIST_REASONS_FILE):
+        return {}
+    try:
+        import json
+        with open(_BLACKLIST_REASONS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_blacklist_reasons(reasons: dict[str, str]) -> None:
+    try:
+        import json
+        os.makedirs(os.path.dirname(_BLACKLIST_REASONS_FILE), exist_ok=True)
+        with open(_BLACKLIST_REASONS_FILE, "w", encoding="utf-8") as f:
+            json.dump(reasons, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        logger.warning(f"Failed to save blacklist reasons: {e}")
+
 
 def get_blacklist() -> list[str]:
     """Возвращает текущий ЧС (список юзернеймов)."""
@@ -179,7 +341,15 @@ def get_blacklist() -> list[str]:
         return list(cardinal.blacklist)
 
 
-def add_to_blacklist(username: str) -> tuple[bool, str]:
+def get_blacklist_detailed() -> list[dict[str, Any]]:
+    """Возвращает текущий ЧС с причинами блокировки."""
+    cardinal = get_cardinal()
+    with _BLACKLIST_LOCK:
+        reasons = _load_blacklist_reasons()
+        return [{"username": u, "reason": reasons.get(u, "")} for u in cardinal.blacklist]
+
+
+def add_to_blacklist(username: str, reason: Optional[str] = None) -> tuple[bool, str]:
     """Добавляет юзернейм в ЧС."""
     username = username.strip().lstrip("@")
     if not username:
@@ -195,6 +365,10 @@ def add_to_blacklist(username: str) -> tuple[bool, str]:
         except Exception as e:
             cardinal.blacklist.remove(username)
             return False, str(e)
+        if reason:
+            reasons = _load_blacklist_reasons()
+            reasons[username] = reason.strip()
+            _save_blacklist_reasons(reasons)
     return True, ""
 
 
@@ -211,6 +385,10 @@ def remove_from_blacklist(username: str) -> tuple[bool, str]:
         except Exception as e:
             cardinal.blacklist.append(username)
             return False, str(e)
+        reasons = _load_blacklist_reasons()
+        if username in reasons:
+            reasons.pop(username, None)
+            _save_blacklist_reasons(reasons)
     return True, ""
 
 
@@ -390,6 +568,40 @@ def set_proxy_enabled(enabled: bool) -> tuple[bool, str]:
     return True, ""
 
 
+def set_proxy_check_enabled(enabled: bool) -> tuple[bool, str]:
+    """Включает/выключает автоматическую проверку прокси."""
+    cardinal = get_cardinal()
+    with _PROXY_LOCK:
+        cardinal.MAIN_CFG["Proxy"]["check"] = "1" if enabled else "0"
+        cardinal.save_config(cardinal.MAIN_CFG, "configs/_main.cfg")
+    return True, ""
+
+
+def test_proxy(proxy_id: int) -> dict[str, Any]:
+    """Тестирует работоспособность конкретного прокси."""
+    cardinal = get_cardinal()
+    with _PROXY_LOCK:
+        if proxy_id not in cardinal.proxy_dict:
+            return {"ok": False, "error": f"Прокси #{proxy_id} не найден"}
+        proxy_str = cardinal.proxy_dict[proxy_id]
+
+    import time as _time
+    from Utils.cardinal_tools import check_proxy
+    t0 = _time.time()
+    try:
+        ok = check_proxy({"http": proxy_str, "https": proxy_str})
+        elapsed = round(_time.time() - t0, 3)
+        return {
+            "ok": ok,
+            "proxy_id": proxy_id,
+            "proxy": _mask_proxy(proxy_str),
+            "ping": elapsed if ok else None,
+            "error": "" if ok else "Не удалось подключиться к прокси",
+        }
+    except Exception as e:
+        return {"ok": False, "proxy_id": proxy_id, "proxy": _mask_proxy(proxy_str), "error": str(e)}
+
+
 # ---------------------------------------------------------------------------
 # Авторизованные пользователи
 # ---------------------------------------------------------------------------
@@ -506,62 +718,48 @@ def get_account_info() -> dict[str, Any]:
     }
 
 
-def change_golden_key(new_key: str, confirm: bool = False) -> tuple[bool, str]:
-    """Меняет golden_key через SecretManager. Требует confirm=True."""
+async def change_golden_key(new_key: str, confirm: bool = False) -> tuple[bool, str, dict[str, Any]]:
+    """Меняет golden_key через AccountLifecycleManager. Требует confirm=True."""
     if not confirm:
-        return False, "Требуется подтверждение (confirm=true)"
+        return False, "Требуется подтверждение (confirm=true)", {}
     clean_key = new_key.strip()
     if len(clean_key) != 32:
-        return False, "Golden Key должен состоять ровно из 32 символов"
+        from carnaval.services.account_lifecycle import AccountLifecycleManager, ErrorCode
+        mgr = AccountLifecycleManager()
+        mgr._set_error(
+            ErrorCode.INVALID_KEY_FORMAT,
+            f"Golden Key должен состоять ровно из 32 символов (получено {len(clean_key)})"
+        )
+        return False, "Golden Key должен состоять ровно из 32 символов", mgr.get_status()
 
-    from carnaval.secrets_manager import SecretManager
-    SecretManager.set_secret("golden_key", clean_key)
+    from carnaval.services.account_lifecycle import AccountLifecycleManager
+    mgr = AccountLifecycleManager()
+    res = await mgr.change_golden_key(clean_key)
+    account_status = res.get("status", {})
+    if not res.get("ok"):
+        err_msg = (
+            account_status.get("error", {}).get("message")
+            if account_status.get("error")
+            else "Ошибка смены Golden Key"
+        )
+        return False, err_msg or "Ошибка смены Golden Key", account_status
 
-    cardinal = get_cardinal()
-    if hasattr(cardinal, "account") and cardinal.account:
-        cardinal.account.golden_key = clean_key
-    if hasattr(cardinal, "MAIN_CFG") and "FunPay" in cardinal.MAIN_CFG:
-        cardinal.MAIN_CFG["FunPay"]["golden_key"] = clean_key
-        try:
-            cardinal.save_config(cardinal.MAIN_CFG, "configs/_main.cfg")
-        except Exception:
-            pass
-
-    # Запускаем переподключение FunPay в фоновом потоке
-    try:
-        import threading
-        if hasattr(cardinal, 'reinit_account'):
-            def _reinit():
-                try:
-                    success = cardinal.reinit_account()
-                    if not success:
-                        pass # logger.warning("reinit_account вернул False")
-                except Exception as e:
-                    pass # logger.error(f"ошибка reinit_account: {e}")
-            threading.Thread(target=_reinit, daemon=True, name="Carnaval-Reinit").start()
-    except Exception:
-        pass
-
-    return True, ""
+    return True, "", account_status
 
 
-def delete_golden_key(confirm: bool = False) -> tuple[bool, str]:
-    """Удаляет golden_key из SecretManager. Требует confirm=True."""
+async def delete_golden_key(confirm: bool = False) -> tuple[bool, str, dict[str, Any]]:
+    """Удаляет golden_key через AccountLifecycleManager. Требует confirm=True."""
     if not confirm:
-        return False, "Требуется подтверждение (confirm=true)"
-    from carnaval.secrets_manager import SecretManager
-    SecretManager.delete_secret("golden_key")
+        return False, "Требуется подтверждение (confirm=true)", {}
 
-    cardinal = get_cardinal()
-    if hasattr(cardinal, "account") and cardinal.account:
-        cardinal.account.golden_key = ""
-    if hasattr(cardinal, "MAIN_CFG") and "FunPay" in cardinal.MAIN_CFG:
-        cardinal.MAIN_CFG["FunPay"]["golden_key"] = ""
-        try:
-            cardinal.save_config(cardinal.MAIN_CFG, "configs/_main.cfg")
-        except Exception:
-            pass
-    return True, ""
+    from carnaval.services.account_lifecycle import AccountLifecycleManager
+    mgr = AccountLifecycleManager()
+    res = await mgr.disconnect_account()
+    account_status = res.get("status", {})
+    if not res.get("ok"):
+        return False, "Ошибка отключения аккаунта FunPay", account_status
+
+    return True, "", account_status
 
 
 # ---------------------------------------------------------------------------
@@ -771,3 +969,178 @@ def shutdown_cardinal(confirm: bool = False) -> tuple[bool, str]:
 
     threading.Thread(target=_do_shutdown, daemon=True).start()
     return True, ""
+
+
+# ---------------------------------------------------------------------------
+# Дополнительные функции для паритета с TG-ботом
+# ---------------------------------------------------------------------------
+
+def get_authorized_user_detail(target_user_id: int) -> Optional[dict[str, Any]]:
+    """Возвращает информацию о конкретном авторизованном пользователе."""
+    cardinal = get_cardinal()
+    tg = cardinal.telegram
+    if not tg:
+        return None
+    with _AUTH_USERS_LOCK:
+        auth_users = tg.authorized_users
+        if isinstance(auth_users, dict):
+            if target_user_id in auth_users:
+                return {"user_id": target_user_id, "data": auth_users[target_user_id]}
+            elif str(target_user_id) in auth_users:
+                return {"user_id": target_user_id, "data": auth_users[str(target_user_id)]}
+        elif isinstance(auth_users, list):
+            if target_user_id in auth_users or str(target_user_id) in auth_users:
+                return {"user_id": target_user_id, "data": {}}
+    return None
+
+
+def pin_plugin(uuid: str) -> tuple[bool, str]:
+    """Закрепляет или открепляет плагин."""
+    cardinal = get_cardinal()
+    if uuid not in cardinal.plugins:
+        return False, f"Плагин {uuid} не найден"
+    if hasattr(cardinal, "pin_plugin"):
+        cardinal.pin_plugin(uuid)
+    else:
+        pl = cardinal.plugins[uuid]
+        pl.pinned = not getattr(pl, "pinned", False)
+    return True, ""
+
+
+def get_plugin_commands(uuid: str) -> tuple[Optional[dict[str, str]], Optional[str]]:
+    """Возвращает список команд плагина."""
+    cardinal = get_cardinal()
+    if uuid not in cardinal.plugins:
+        return None, f"Плагин {uuid} не найден"
+    pl = cardinal.plugins[uuid]
+    commands = getattr(pl, "commands", {}) or {}
+    return commands, None
+
+
+def list_available_configs() -> list[dict[str, Any]]:
+    """Возвращает метаданные доступных для скачивания/загрузки конфигурационных файлов."""
+    configs_meta = [
+        {"type": "main", "filename": "_main.cfg", "path": "configs/_main.cfg", "description": "Основной конфиг Cardinal"},
+        {"type": "autoResponse", "filename": "auto_response.cfg", "path": "configs/auto_response.cfg", "description": "Конфиг автоответчика"},
+        {"type": "autoDelivery", "filename": "auto_delivery.cfg", "path": "configs/auto_delivery.cfg", "description": "Конфиг автовыдачи"},
+    ]
+    result = []
+    import datetime as _dt
+    for item in configs_meta:
+        path = item["path"]
+        exists = os.path.exists(path)
+        size = os.path.getsize(path) if exists else 0
+        mtime = _dt.datetime.fromtimestamp(os.path.getmtime(path)).isoformat() if exists else None
+        result.append({
+            "type": item["type"],
+            "filename": item["filename"],
+            "path": path,
+            "exists": exists,
+            "size": size,
+            "last_modified": mtime,
+            "description": item["description"],
+        })
+    return result
+
+
+def get_config_content(config_type: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    Возвращает (content, filename, error) для указанного типа конфига.
+    """
+    type_map = {
+        "main": ("configs/_main.cfg", "_main.cfg"),
+        "autoresponse": ("configs/auto_response.cfg", "auto_response.cfg"),
+        "auto_response": ("configs/auto_response.cfg", "auto_response.cfg"),
+        "autodelivery": ("configs/auto_delivery.cfg", "auto_delivery.cfg"),
+        "auto_delivery": ("configs/auto_delivery.cfg", "auto_delivery.cfg"),
+    }
+    key = config_type.strip().lower()
+    if key not in type_map:
+        return None, None, f"Неизвестный тип конфига: {config_type}. Допустимы: main, autoResponse, autoDelivery"
+    path, filename = type_map[key]
+    if not os.path.exists(path):
+        return None, None, f"Файл {path} не найден"
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if filename == "_main.cfg":
+            try:
+                from configparser import ConfigParser
+                import io
+                cp = ConfigParser(interpolation=None)
+                cp.read_string(content)
+                if "Telegram" in cp and "token" in cp["Telegram"]:
+                    cp["Telegram"]["token"] = "[MASKED_BY_CARNAVAL]"
+                if "Telegram" in cp and "secretPassword" in cp["Telegram"]:
+                    cp["Telegram"]["secretPassword"] = "[MASKED_BY_CARNAVAL]"
+                if "FunPay" in cp and "golden_key" in cp["FunPay"]:
+                    cp["FunPay"]["golden_key"] = "[MASKED_BY_CARNAVAL]"
+                if "Carnaval" in cp and "secretKey" in cp["Carnaval"]:
+                    cp["Carnaval"]["secretKey"] = "[MASKED_BY_CARNAVAL]"
+                out_str = io.StringIO()
+                cp.write(out_str)
+                content = out_str.getvalue()
+            except Exception:
+                pass
+
+        return content, filename, None
+    except Exception as e:
+        return None, None, str(e)
+
+
+def save_config_file(config_type: str, content: str) -> tuple[bool, str]:
+    """
+    Валидирует и сохраняет конфигурационный файл, обновляя состояние Cardinal.
+    """
+    type_map = {
+        "main": ("configs/_main.cfg", "_main.cfg", "main"),
+        "autoresponse": ("configs/auto_response.cfg", "auto_response.cfg", "auto_response"),
+        "auto_response": ("configs/auto_response.cfg", "auto_response.cfg", "auto_response"),
+        "autodelivery": ("configs/auto_delivery.cfg", "auto_delivery.cfg", "auto_delivery"),
+        "auto_delivery": ("configs/auto_delivery.cfg", "auto_delivery.cfg", "auto_delivery"),
+    }
+    key = config_type.strip().lower()
+    if key not in type_map:
+        return False, f"Неизвестный тип конфига: {config_type}. Допустимы: main, autoResponse, autoDelivery"
+    path, filename, norm_type = type_map[key]
+
+    if not content or not content.strip():
+        return False, "Содержимое конфига не может быть пустым"
+
+    os.makedirs("storage/cache", exist_ok=True)
+    temp_path = f"storage/cache/temp_{norm_type}.cfg"
+    try:
+        with open(temp_path, "w", encoding="utf-8") as f:
+            f.write(content)
+    except Exception as e:
+        return False, f"Не удалось записать временный файл: {e}"
+
+    from Utils import config_loader as cfg_loader
+    cardinal = get_cardinal()
+
+    try:
+        if norm_type == "main":
+            new_cfg = cfg_loader.load_main_config(temp_path)
+            cardinal.save_config(new_cfg, path)
+            cardinal.MAIN_CFG = new_cfg
+        elif norm_type == "auto_response":
+            new_cfg = cfg_loader.load_auto_response_config(temp_path)
+            raw_new_cfg = cfg_loader.load_raw_auto_response_config(temp_path)
+            cardinal.RAW_AR_CFG, cardinal.AR_CFG = raw_new_cfg, new_cfg
+            cardinal.save_config(cardinal.RAW_AR_CFG, path)
+        elif norm_type == "auto_delivery":
+            new_cfg = cfg_loader.load_auto_delivery_config(temp_path)
+            cardinal.AD_CFG = new_cfg
+            cardinal.save_config(cardinal.AD_CFG, path)
+        return True, ""
+    except Exception as e:
+        logger.error(f"Ошибка проверки конфига {config_type}: {e}", exc_info=True)
+        return False, f"Ошибка валидации конфига: {e}"
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+

@@ -216,7 +216,8 @@ def test_health_endpoint(mock_cardinal_p7):
     res = client.get("/api/health")
     assert res.status_code == 200
     data = res.json()
-    assert data["status"] == "ok"
+    assert data["status"] in ("ok", "healthy")
+    assert data["backend"] == "healthy"
     assert data["app"] == "Carnaval"
     assert "uptime_sec" in data
     assert "funpay" in data

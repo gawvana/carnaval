@@ -141,45 +141,102 @@ def build_app(allowed_origins: list[str] | None = None, serve_static: bool | Non
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         return response
 
-    # Минимальный эндпоинт проверки работоспособности (Section 41)
+    # Эндпоинт проверки работоспособности (Section 41)
     @app.get("/health")
     @app.get("/api/health")
     async def health() -> JSONResponse:
-        """Минимальный health check без раскрытия внутреннего состояния."""
+        """Реальный health check с авторитетным состоянием подсистем."""
         uptime_sec = 0
         fp_connected = False
         tg_connected = False
+        runner_running = False
+        account_status = "not_initialized"
+
         try:
-            c = get_cardinal()
-            if hasattr(c, "start_time") and isinstance(c.start_time, (int, float)):
+            try:
+                c = get_cardinal()
+            except Exception:
+                c = None
+
+            if c and hasattr(c, "start_time") and isinstance(c.start_time, (int, float)):
                 uptime_sec = int(time.time() - c.start_time)
-            if hasattr(c, "account") and c.account:
-                fp_connected = bool(getattr(c.account, "is_initiated", False) or getattr(c.account, "id", None))
-            if hasattr(c, "telegram") and c.telegram:
+
+            if c and hasattr(c, "telegram") and c.telegram:
                 is_alive_fn = getattr(c.telegram, "is_alive", None)
                 if callable(is_alive_fn):
                     tg_connected = bool(is_alive_fn())
                 else:
                     tg_connected = bool(getattr(c.telegram, "bot", None))
-        except Exception:
-            pass
+            elif os.getenv("TG_BOT_TOKEN", "").strip():
+                tg_connected = True
+
+            from carnaval.secrets_manager import SecretManager
+            from carnaval.services.account_lifecycle import lifecycle_manager, AccountState
+            st = lifecycle_manager.get_status()
+
+            has_golden_key = (
+                SecretManager.has_secret("golden_key")
+                or bool(os.getenv("FUNPAY_GOLDEN_KEY", "").strip())
+                or bool(os.getenv("GOLDEN_KEY", "").strip())
+            )
+            cardinal_acc = getattr(c, "account", None) if c else None
+            cardinal_key = bool(cardinal_acc and getattr(cardinal_acc, "golden_key", None))
+
+            cardinal_acc_ready = bool(
+                cardinal_acc and (getattr(cardinal_acc, "is_initiated", False) or getattr(cardinal_acc, "id", None))
+            )
+
+            # FunPay подключен ТОЛЬКО если есть ключ и подтвержденная сессия
+            if (has_golden_key or cardinal_key) and (st.get("is_connected") or cardinal_acc_ready):
+                fp_connected = True
+            else:
+                fp_connected = False
+
+            if fp_connected and (st.get("is_ready") or (cardinal_acc_ready and getattr(c, "running", False))):
+                account_status = "ready"
+            elif st.get("state") == AccountState.FAILED.value or (st.get("error") is not None):
+                account_status = "failed"
+            else:
+                account_status = "not_initialized"
+
+            if fp_connected and ((c and getattr(c, "running", False) and getattr(c, "runner", None) is not None) or st.get("is_ready")):
+                runner_running = True
+        except Exception as e:
+            logger.debug(f"Carnaval: health check error: {e}")
+
+        # Авторитетный расчет общего статуса
+        if tg_connected and fp_connected and runner_running:
+            status = "healthy"
+        elif tg_connected:
+            status = "degraded"
+        elif fp_connected:
+            status = "degraded"
+        else:
+            status = "unhealthy"
 
         return JSONResponse({
-            "status": "ok",
-            "app": "Carnaval",
-            "uptime_sec": uptime_sec,
-            "funpay": "connected" if fp_connected else "disconnected",
+            "status": status,
+            "backend": "healthy",
             "telegram": "connected" if tg_connected else "disconnected",
+            "funpay": "connected" if fp_connected else "disconnected",
+            "account": account_status,
+            "runner": "running" if runner_running else "stopped",
+            "uptime_sec": uptime_sec,
+            "app": "Carnaval",
             "sse": "active",
         })
 
     # Публичный endpoint — метаинформация
     @app.get("/api/meta")
     async def meta() -> JSONResponse:
-        cardinal = get_cardinal()
+        try:
+            cardinal = get_cardinal()
+            version = getattr(cardinal, "VERSION", "0.1.0") or "0.1.0"
+        except Exception:
+            version = "0.1.0"
         return JSONResponse({
             "app": "Carnaval",
-            "version": getattr(cardinal, "VERSION", "0.0.0"),
+            "version": version,
         })
 
     # API роутеры

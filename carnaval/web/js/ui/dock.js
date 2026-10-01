@@ -6,6 +6,7 @@
 import { tg } from '../tg.js';
 import { openSheet, closeSheet } from './sheet.js';
 import { t } from '../i18n.js';
+import { getIcon } from './icons.js';
 
 export function renderDock(tabs, onSelect) {
   const chrome = document.createElement('div');
@@ -17,7 +18,7 @@ export function renderDock(tabs, onSelect) {
   fab.className = 'fab press';
   fab.id = 'fab';
   fab.setAttribute('aria-label', t('create_action'));
-  fab.innerHTML = `<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>`;
+  fab.innerHTML = getIcon('plus');
   fab.addEventListener('click', () => {
     tg.haptic.impact('medium');
     openCreateSheet();
@@ -33,11 +34,19 @@ export function renderDock(tabs, onSelect) {
   lens.className = 'lens';
   dock.appendChild(lens);
 
-  const tabEls = tabs.map((t) => {
+  const tabEls = tabs.map((tab) => {
     const btn = document.createElement('button');
     btn.className = 'tab';
-    btn.dataset.id = t.id;
-    btn.innerHTML = `${t.icon}<span>${t.label}</span>`;
+    btn.dataset.id = tab.id;
+    
+    // Гарантируем семантические SVG-иконки без эмодзи
+    let iconHtml = tab.icon;
+    if (!iconHtml || !iconHtml.trim().startsWith('<svg')) {
+      const iconKey = tab.id === 'dashboard' ? 'home' : tab.id;
+      iconHtml = getIcon(iconKey);
+    }
+    
+    btn.innerHTML = `${iconHtml}<span>${tab.label}</span>`;
     dock.appendChild(btn);
     return btn;
   });
@@ -93,7 +102,7 @@ export function renderDock(tabs, onSelect) {
 
   // Click fallback
   tabEls.forEach((btn, i) => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', () => {
       tg.haptic.impact('light');
       onSelect(tabs[i].id);
     });
@@ -106,7 +115,7 @@ function openCreateSheet() {
   const content = `
     <button class="opt press" id="action-create-lot">
       <em style="background:var(--ok-c);color:var(--on-ok-c)">
-        <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        ${getIcon('delivery')}
       </em>
       <div>
         <b>Автовыдачу</b>
@@ -115,7 +124,7 @@ function openCreateSheet() {
     </button>
     <button class="opt press" id="action-create-file">
       <em style="background:var(--p);color:var(--on-p)">
-        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></svg>
+        ${getIcon('file')}
       </em>
       <div>
         <b>${t('action_product_file')}</b>
@@ -124,7 +133,7 @@ function openCreateSheet() {
     </button>
     <button class="opt press" id="action-create-cmd">
       <em style="background:var(--t);color:var(--on-t)">
-        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        ${getIcon('message')}
       </em>
       <div>
         <b>${t('action_auto_response')}</b>
@@ -133,7 +142,7 @@ function openCreateSheet() {
     </button>
     <button class="opt press" id="action-create-tmplt">
       <em style="background:var(--s);color:var(--on-s)">
-        <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h6"/></svg>
+        ${getIcon('template')}
       </em>
       <div>
         <b>${t('action_template')}</b>

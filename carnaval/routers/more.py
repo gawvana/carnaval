@@ -52,8 +52,35 @@ class GreetingUpdate(BaseModel):
     value: str
 
 
+class GreetingsTextUpdate(BaseModel):
+    text: str
+
+
+class GreetingsCooldownUpdate(BaseModel):
+    cooldown: float
+
+
+class WatermarkUpdate(BaseModel):
+    watermark: str
+
+
+class OrderConfirmTextUpdate(BaseModel):
+    text: str
+
+
+class ReviewReplyStarUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    text: Optional[str] = None
+
+
 class BlacklistAdd(BaseModel):
     username: str
+    reason: Optional[str] = None
+
+
+class BlacklistRemove(BaseModel):
+    username: str
+    reason: Optional[str] = None
 
 
 class ProxyAdd(BaseModel):
@@ -64,6 +91,19 @@ class ProxyEnabled(BaseModel):
     enabled: bool
 
 
+class ProxyCheckUpdate(BaseModel):
+    check: bool
+
+
+class ProxySelectRequest(BaseModel):
+    proxy_id: int
+
+
+class ConfigContentUpdate(BaseModel):
+    content: str
+    confirm: bool = False
+
+
 class GoldenKeyChange(BaseModel):
     new_key: str
     confirm: bool = False
@@ -71,6 +111,7 @@ class GoldenKeyChange(BaseModel):
 
 class SystemAction(BaseModel):
     confirm: bool = False
+
 
 
 # ─────────────────────────────────────────────────────────────
@@ -94,7 +135,7 @@ async def update_notification(request: Request, body: NotificationUpdate, user_i
 
 
 # ─────────────────────────────────────────────────────────────
-# 2. Приветствие / OrderConfirm / ReviewReply
+# 2. Приветствие / OrderConfirm / ReviewReply / Водяной знак
 # ─────────────────────────────────────────────────────────────
 
 @router.get("/more/greetings")
@@ -113,22 +154,137 @@ async def update_greeting(request: Request, body: GreetingUpdate, user_id: int =
     return JSONResponse({"ok": True})
 
 
+@router.get("/more/greetings/text")
+async def get_greetings_text_route(request: Request, user_id: int = Depends(require_user)):
+    text = await asyncio.get_event_loop().run_in_executor(None, more_svc.get_greetings_text)
+    return JSONResponse({"text": text})
+
+
+@router.patch("/more/greetings/text")
+async def update_greetings_text_route(request: Request, body: GreetingsTextUpdate, user_id: int = Depends(require_user)):
+    ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.update_greetings_text, body.text)
+    if not ok:
+        raise HTTPException(400, err)
+    logger.info(f"AUDIT: user_id={user_id} обновил текст приветствия")
+    return JSONResponse({"ok": True, "text": body.text})
+
+
+@router.get("/more/greetings/cooldown")
+async def get_greetings_cooldown_route(request: Request, user_id: int = Depends(require_user)):
+    cooldown = await asyncio.get_event_loop().run_in_executor(None, more_svc.get_greetings_cooldown)
+    return JSONResponse({"cooldown": cooldown})
+
+
+@router.patch("/more/greetings/cooldown")
+async def update_greetings_cooldown_route(request: Request, body: GreetingsCooldownUpdate, user_id: int = Depends(require_user)):
+    ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.update_greetings_cooldown, body.cooldown)
+    if not ok:
+        raise HTTPException(400, err)
+    logger.info(f"AUDIT: user_id={user_id} обновил кулдаун приветствия: {body.cooldown}")
+    return JSONResponse({"ok": True, "cooldown": body.cooldown})
+
+
+@router.get("/more/watermark")
+async def get_watermark_route(request: Request, user_id: int = Depends(require_user)):
+    watermark = await asyncio.get_event_loop().run_in_executor(None, more_svc.get_watermark)
+    return JSONResponse({"watermark": watermark})
+
+
+@router.patch("/more/watermark")
+async def update_watermark_route(request: Request, body: WatermarkUpdate, user_id: int = Depends(require_user)):
+    ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.update_watermark, body.watermark)
+    if not ok:
+        raise HTTPException(400, err)
+    logger.info(f"AUDIT: user_id={user_id} обновил водяной знак сообщений")
+    return JSONResponse({"ok": True, "watermark": body.watermark})
+
+
+@router.get("/more/order-confirm")
+async def get_order_confirm_route(request: Request, user_id: int = Depends(require_user)):
+    settings = await asyncio.get_event_loop().run_in_executor(None, more_svc.get_order_confirm_settings)
+    return JSONResponse(settings)
+
+
+@router.get("/more/order-confirm/reply-text")
+async def get_order_confirm_reply_text_route(request: Request, user_id: int = Depends(require_user)):
+    text = await asyncio.get_event_loop().run_in_executor(None, more_svc.get_order_confirm_reply_text)
+    return JSONResponse({"text": text})
+
+
+@router.patch("/more/order-confirm/reply-text")
+async def update_order_confirm_reply_text_route(request: Request, body: OrderConfirmTextUpdate, user_id: int = Depends(require_user)):
+    ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.update_order_confirm_reply_text, body.text)
+    if not ok:
+        raise HTTPException(400, err)
+    logger.info(f"AUDIT: user_id={user_id} обновил текст подтверждения заказа")
+    return JSONResponse({"ok": True, "text": body.text})
+
+
+@router.get("/more/review-reply")
+async def get_review_reply_route(request: Request, user_id: int = Depends(require_user)):
+    settings = await asyncio.get_event_loop().run_in_executor(None, more_svc.get_review_reply_settings)
+    return JSONResponse(settings)
+
+
+@router.get("/more/review-reply/{stars}")
+async def get_review_reply_star_route(stars: int, request: Request, user_id: int = Depends(require_user)):
+    star_data, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.get_review_reply_star, stars)
+    if err:
+        raise HTTPException(400, err)
+    return JSONResponse(star_data)
+
+
+@router.patch("/more/review-reply/{stars}")
+async def update_review_reply_star_route(stars: int, body: ReviewReplyStarUpdate, request: Request, user_id: int = Depends(require_user)):
+    ok, err = await asyncio.get_event_loop().run_in_executor(
+        None, more_svc.update_review_reply_star, stars, body.enabled, body.text
+    )
+    if not ok:
+        raise HTTPException(400, err)
+    logger.info(f"AUDIT: user_id={user_id} обновил автоответ на отзыв ({stars} звёзд)")
+    return JSONResponse({"ok": True, "star": stars})
+
+
 # ─────────────────────────────────────────────────────────────
 # 3. Чёрный список
 # ─────────────────────────────────────────────────────────────
 
 @router.get("/more/blacklist")
 async def get_blacklist(request: Request, user_id: int = Depends(require_user)):
-    return JSONResponse({"blacklist": await asyncio.get_event_loop().run_in_executor(None, more_svc.get_blacklist)})
+    bl = await asyncio.get_event_loop().run_in_executor(None, more_svc.get_blacklist)
+    detailed = await asyncio.get_event_loop().run_in_executor(None, more_svc.get_blacklist_detailed)
+    return JSONResponse({"blacklist": bl, "items": detailed})
 
 
 @router.post("/more/blacklist")
 async def add_to_blacklist(request: Request, body: BlacklistAdd, user_id: int = Depends(require_user)):
-    ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.add_to_blacklist, body.username)
+    ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.add_to_blacklist, body.username, body.reason)
     if not ok:
         raise HTTPException(400, err)
-    logger.info(f"AUDIT: user_id={user_id} добавил в ЧС @{body.username}")
+    reason_info = f" (причина: {body.reason})" if body.reason else ""
+    logger.info(f"AUDIT: user_id={user_id} добавил в ЧС @{body.username}{reason_info}")
     return JSONResponse({"ok": True})
+
+
+@router.post("/more/blacklist/ban")
+async def ban_user_route(request: Request, body: BlacklistAdd, user_id: int = Depends(require_user)):
+    """Алиас для добавления пользователя в ЧС с причиной (BAN в боте)."""
+    ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.add_to_blacklist, body.username, body.reason)
+    if not ok:
+        raise HTTPException(400, err)
+    reason_info = f" (причина: {body.reason})" if body.reason else ""
+    logger.info(f"AUDIT: user_id={user_id} заблокировал @{body.username}{reason_info}")
+    return JSONResponse({"ok": True, "username": body.username})
+
+
+@router.post("/more/blacklist/unban")
+async def unban_user_route(request: Request, body: BlacklistRemove, user_id: int = Depends(require_user)):
+    """Алиас для удаления пользователя из ЧС (UNBAN в боте)."""
+    ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.remove_from_blacklist, body.username)
+    if not ok:
+        raise HTTPException(400, err)
+    logger.info(f"AUDIT: user_id={user_id} разблокировал @{body.username}")
+    return JSONResponse({"ok": True, "username": body.username})
 
 
 @router.delete("/more/blacklist/{username}")
@@ -208,6 +364,23 @@ async def delete_plugin(
     return JSONResponse({"ok": True})
 
 
+@router.post("/more/plugins/{uuid}/pin")
+async def pin_plugin_route(request: Request, uuid: str, user_id: int = Depends(require_user)):
+    ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.pin_plugin, uuid)
+    if not ok:
+        raise HTTPException(400, err)
+    logger.info(f"AUDIT: user_id={user_id} изменил закрепление плагина {uuid}")
+    return JSONResponse({"ok": True})
+
+
+@router.get("/more/plugins/{uuid}/commands")
+async def get_plugin_commands_route(request: Request, uuid: str, user_id: int = Depends(require_user)):
+    commands, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.get_plugin_commands, uuid)
+    if err:
+        raise HTTPException(404, err)
+    return JSONResponse({"commands": commands or {}})
+
+
 # ─────────────────────────────────────────────────────────────
 # 5. Прокси
 # ─────────────────────────────────────────────────────────────
@@ -218,7 +391,8 @@ async def get_proxy(request: Request, user_id: int = Depends(require_user)):
 
 
 @router.post("/more/proxy")
-async def add_proxy(request: Request, body: ProxyAdd, user_id: int = Depends(require_user)):
+async def add_proxy(request: Request, body: ProxyAdd, session: dict = Depends(require_panel_unlocked)):
+    user_id = session["telegram_user_id"]
     ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.add_proxy, body.proxy)
     if not ok:
         raise HTTPException(400, err)
@@ -227,7 +401,8 @@ async def add_proxy(request: Request, body: ProxyAdd, user_id: int = Depends(req
 
 
 @router.delete("/more/proxy/{proxy_id}")
-async def delete_proxy(proxy_id: int, request: Request, user_id: int = Depends(require_user)):
+async def delete_proxy(proxy_id: int, request: Request, session: dict = Depends(require_panel_unlocked)):
+    user_id = session["telegram_user_id"]
     ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.delete_proxy, proxy_id)
     if not ok:
         raise HTTPException(400, err)
@@ -236,7 +411,8 @@ async def delete_proxy(proxy_id: int, request: Request, user_id: int = Depends(r
 
 
 @router.post("/more/proxy/{proxy_id}/activate")
-async def activate_proxy(proxy_id: int, request: Request, user_id: int = Depends(require_user)):
+async def activate_proxy(proxy_id: int, request: Request, session: dict = Depends(require_panel_unlocked)):
+    user_id = session["telegram_user_id"]
     ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.set_active_proxy, proxy_id)
     if not ok:
         raise HTTPException(400, err)
@@ -244,8 +420,38 @@ async def activate_proxy(proxy_id: int, request: Request, user_id: int = Depends
     return JSONResponse({"ok": True})
 
 
+@router.post("/more/proxy/select")
+async def select_proxy_route(request: Request, body: ProxySelectRequest, session: dict = Depends(require_panel_unlocked)):
+    """Алиас для выбора активного прокси (CHOOSE_PROXY в боте)."""
+    user_id = session["telegram_user_id"]
+    ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.set_active_proxy, body.proxy_id)
+    if not ok:
+        raise HTTPException(400, err)
+    logger.info(f"AUDIT: user_id={user_id} выбрал активный прокси #{body.proxy_id}")
+    return JSONResponse({"ok": True})
+
+
+@router.post("/more/proxy/{proxy_id}/test")
+async def test_proxy_route(proxy_id: int, request: Request, user_id: int = Depends(require_user)):
+    """Проверить работоспособность прокси."""
+    result = await asyncio.get_event_loop().run_in_executor(None, more_svc.test_proxy, proxy_id)
+    return JSONResponse(result)
+
+
+@router.patch("/more/proxy/check")
+async def set_proxy_check_route(request: Request, body: ProxyCheckUpdate, session: dict = Depends(require_panel_unlocked)):
+    """Включение/выключение периодической проверки прокси."""
+    user_id = session["telegram_user_id"]
+    ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.set_proxy_check_enabled, body.check)
+    if not ok:
+        raise HTTPException(400, err)
+    logger.info(f"AUDIT: user_id={user_id} изменил проверку прокси: {body.check}")
+    return JSONResponse({"ok": True, "check": body.check})
+
+
 @router.patch("/more/proxy/enabled")
-async def set_proxy_enabled(request: Request, body: ProxyEnabled, user_id: int = Depends(require_user)):
+async def set_proxy_enabled(request: Request, body: ProxyEnabled, session: dict = Depends(require_panel_unlocked)):
+    user_id = session["telegram_user_id"]
     ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.set_proxy_enabled, body.enabled)
     if not ok:
         raise HTTPException(400, err)
@@ -260,6 +466,15 @@ async def set_proxy_enabled(request: Request, body: ProxyEnabled, user_id: int =
 @router.get("/more/authorized-users")
 async def get_authorized_users(request: Request, user_id: int = Depends(require_user)):
     return JSONResponse({"users": await asyncio.get_event_loop().run_in_executor(None, more_svc.get_authorized_users)})
+
+
+@router.get("/more/authorized-users/{target_user_id}")
+async def get_authorized_user_route(target_user_id: int, request: Request, user_id: int = Depends(require_user)):
+    user = await asyncio.get_event_loop().run_in_executor(None, more_svc.get_authorized_user_detail, target_user_id)
+    if not user:
+        raise HTTPException(404, f"Пользователь {target_user_id} не найден в списке авторизованных")
+    return JSONResponse(user)
+
 
 
 @router.delete("/more/authorized-users/{target_user_id}")
@@ -312,13 +527,11 @@ async def change_golden_key(request: Request, body: GoldenKeyChange, session: di
             {"error": "confirm_required", "message": "Смена golden_key требует confirm=true"},
             status_code=400,
         )
-    ok, err = await asyncio.get_event_loop().run_in_executor(
-        None, more_svc.change_golden_key, body.new_key, body.confirm
-    )
+    ok, err, account_status = await more_svc.change_golden_key(body.new_key, body.confirm)
     if not ok:
-        raise HTTPException(400, err)
+        raise HTTPException(status_code=400, detail={"error": "change_failed", "message": err, "account": account_status})
     logger.warning(f"AUDIT: user_id={user_id} изменил golden_key аккаунта")
-    return JSONResponse({"ok": True})
+    return JSONResponse({"ok": True, "account": account_status})
 
 
 @router.delete("/more/account/golden-key")
@@ -329,11 +542,11 @@ async def delete_golden_key_route(request: Request, session: dict = Depends(requ
             {"error": "confirm_required", "message": "Удаление golden_key требует confirm=true"},
             status_code=400,
         )
-    ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.delete_golden_key, True)
+    ok, err, account_status = await more_svc.delete_golden_key(True)
     if not ok:
-        raise HTTPException(400, err)
+        raise HTTPException(status_code=400, detail={"error": "disconnect_failed", "message": err, "account": account_status})
     logger.warning(f"AUDIT: user_id={user_id} удалил golden_key аккаунта")
-    return JSONResponse({"ok": True})
+    return JSONResponse({"ok": True, "account": account_status})
 
 
 # ─────────────────────────────────────────────────────────────
@@ -431,6 +644,97 @@ async def restore_backup(
         raise HTTPException(400, err)
     logger.warning(f"AUDIT: user_id={user_id} восстановил конфигурацию из архива '{file.filename}'")
     return JSONResponse({"ok": True})
+
+
+# ─────────────────────────────────────────────────────────────
+# 9.1 Управление отдельными конфигами (Config Loader / DOWNLOAD_CFG)
+# ─────────────────────────────────────────────────────────────
+
+@router.get("/more/configs")
+async def list_configs_route(request: Request, session: dict = Depends(require_panel_unlocked)):
+    """Получить список доступных файлов конфигурации."""
+    configs = await asyncio.get_event_loop().run_in_executor(None, more_svc.list_available_configs)
+    return JSONResponse({"configs": configs})
+
+
+@router.get("/more/configs/{config_type}")
+@router.get("/more/configs/{config_type}/download")
+async def download_config_file_route(config_type: str, request: Request, session: dict = Depends(require_panel_unlocked)):
+    """Скачать конкретный файл конфигурации."""
+    user_id = session["telegram_user_id"]
+    content, filename, err = await asyncio.get_event_loop().run_in_executor(
+        None, more_svc.get_config_content, config_type
+    )
+    if err or content is None:
+        raise HTTPException(404, err or "Конфиг не найден")
+    logger.info(f"AUDIT: user_id={user_id} скачал конфигурационный файл {filename}")
+    return Response(
+        content=content,
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+        },
+    )
+
+
+@router.post("/more/configs/{config_type}")
+async def upload_config_file_route(
+    config_type: str,
+    request: Request,
+    session: dict = Depends(require_panel_unlocked),
+    file: Optional[UploadFile] = File(None),
+    confirm: bool = Form(False),
+):
+    """
+    Загрузить и применить конфигурационный файл.
+    Требует разблокированной панели (require_panel_unlocked) и подтверждения confirm=true.
+    """
+    user_id = int(session["telegram_user_id"])
+    confirmed = confirm or await _check_confirmation(request)
+    if not confirmed:
+        return JSONResponse(
+            {"error": "confirm_required", "message": f"Изменение конфига {config_type} требует confirm=true"},
+            status_code=400,
+        )
+
+    content_str = ""
+    if file is not None and hasattr(file, "read"):
+        raw_bytes = await file.read()
+        if len(raw_bytes) > 20 * 1024 * 1024:
+            raise HTTPException(413, "Файл конфига превышает лимит 20 МБ")
+        try:
+            content_str = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(400, "Файл должен быть в кодировке UTF-8")
+    else:
+        # Check JSON body
+        if request.headers.get("content-type", "").startswith("application/json"):
+            try:
+                body = await request.json()
+                if isinstance(body, dict):
+                    content_str = body.get("content", "")
+            except Exception:
+                pass
+        if not content_str:
+            try:
+                form = await request.form()
+                content_str = str(form.get("content", ""))
+            except Exception:
+                pass
+
+    if not content_str.strip():
+        raise HTTPException(400, "Пустое содержимое конфига")
+
+    ok, err = await asyncio.get_event_loop().run_in_executor(
+        None, more_svc.save_config_file, config_type, content_str
+    )
+    if not ok:
+        raise HTTPException(400, err)
+
+    logger.warning(f"AUDIT: user_id={user_id} обновил конфигурационный файл {config_type}")
+    return JSONResponse({"ok": True, "config_type": config_type})
 
 
 # ─────────────────────────────────────────────────────────────

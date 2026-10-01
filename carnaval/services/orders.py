@@ -74,8 +74,8 @@ async def get_orders(status: Optional[str] = None, start_from: Optional[str] = N
     acc = cardinal.account
     if not acc or not getattr(acc, "is_initiated", False):
         from carnaval.services.account_lifecycle import lifecycle_manager
-        status = lifecycle_manager.get_status()
-        if status.get("has_key"):
+        curr_status = lifecycle_manager.get_status()
+        if curr_status.get("has_key"):
             try:
                 await lifecycle_manager.reconnect_account()
             except Exception:

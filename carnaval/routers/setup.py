@@ -82,16 +82,24 @@ async def setup_initial_golden_key(
     request: Request,
     session: dict = Depends(require_owner),
 ) -> JSONResponse:
-    """Шифрование и сохранение Golden Key на этапе первичной настройки."""
+    """Шифрование, сохранение и верификация Golden Key на этапе первичной настройки."""
     uid = session["telegram_user_id"]
     ip = request.client.host if request.client else ""
 
-    ok, err = setup_svc.configure_golden_key(uid, req.golden_key, ip=ip)
+    ok, err, account_status = await setup_svc.configure_golden_key(uid, req.golden_key, ip=ip)
     if not ok:
-        raise HTTPException(status_code=400, detail={"error": "bad_request", "message": err})
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "golden_key_rejected", "message": err, "account": account_status}
+        )
 
-    # Frontend получает ТОЛЬКО флаг успеха, реальный ключ никогда не возвращается
-    return JSONResponse({"status": "ok", "configured": True, "message": "Golden Key успешно зашифрован"})
+    # Frontend получает подтверждение и авторитетный статус аккаунта FunPay
+    return JSONResponse({
+        "status": "ok",
+        "configured": True,
+        "message": "Golden Key успешно подключен",
+        "account": account_status,
+    })
 
 
 @router.post("/setup/finalize")

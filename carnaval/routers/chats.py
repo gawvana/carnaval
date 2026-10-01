@@ -22,6 +22,12 @@ class MessageSendRequest(BaseModel):
     chat_name: Optional[str] = None
 
 
+class ChatTemplateSendRequest(BaseModel):
+    template_index: int
+    username: Optional[str] = None
+
+
+
 @router.get("/chats")
 async def list_chats(
     request: Request,
@@ -113,3 +119,25 @@ async def buyer_viewing(
     except Exception as e:
         logger.error(f"Failed to fetch buyer viewing for {buyer_id}: {e}")
         return JSONResponse({"error": "viewing_fetch_failed", "message": str(e)}, status_code=500)
+
+
+@router.post("/chats/{chat_id}/templates")
+async def send_chat_template(
+    chat_id: int,
+    req: ChatTemplateSendRequest,
+    request: Request,
+    user_id: int = Depends(require_user),
+) -> JSONResponse:
+    """Отправить шаблон быстрого ответа в чат."""
+    from carnaval.services import automation as auto_svc
+    try:
+        ok = await auto_svc.send_template_to_chat(req.template_index, chat_id, req.username)
+        if not ok:
+            return JSONResponse({"error": "send_failed", "message": "Failed to send template message"}, status_code=500)
+        logger.info(f"AUDIT: user_id={user_id} отправил шаблон #{req.template_index} в чат #{chat_id}")
+        return JSONResponse({"success": True})
+    except IndexError:
+        return JSONResponse({"error": "not_found", "message": f"Template #{req.template_index} not found"}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"error": "send_failed", "message": str(e)}, status_code=500)
+

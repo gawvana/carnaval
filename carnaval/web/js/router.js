@@ -1,6 +1,6 @@
 /**
  * router.js — хэш-роутер для SPA.
- * Маршруты: #dashboard (default), #orders, #chats, #automation, #more
+ * Маршруты: #dashboard (default), #orders, #chats, #automation, #more, #profile
  */
 
 import { renderDashboard } from './pages/dashboard.js';
@@ -8,25 +8,35 @@ import { renderOrders } from './pages/orders.js';
 import { renderChats } from './pages/chats.js';
 import { renderAutomation } from './pages/automation.js';
 import { renderMore } from './pages/more.js';
+import { renderProfile } from './pages/profile.js';
 import { renderDock } from './ui/dock.js';
+import { getIcon } from './ui/icons.js';
 
 const ROUTES = {
-  dashboard: renderDashboard,
-  orders:    renderOrders,
-  chats:     renderChats,
-  automation:renderAutomation,
-  more:      renderMore,
+  dashboard:  renderDashboard,
+  orders:     renderOrders,
+  chats:      renderChats,
+  automation: renderAutomation,
+  more:       renderMore,
+  profile:    renderProfile,
+  '/profile': renderProfile,
 };
 
 const DEFAULT_ROUTE = 'dashboard';
 
 const TABS = [
-  { id: 'dashboard',  label: 'Главная',       icon: homeIcon() },
-  { id: 'orders',     label: 'Заказы',        icon: ordersIcon() },
-  { id: 'chats',      label: 'Чаты',          icon: chatsIcon() },
-  { id: 'automation', label: 'Авто',          icon: autoIcon() },
-  { id: 'more',       label: 'Ещё',           icon: moreIcon() },
+  { id: 'dashboard',  label: 'Главная',       icon: getIcon('home') },
+  { id: 'orders',     label: 'Заказы',        icon: getIcon('orders') },
+  { id: 'chats',      label: 'Чаты',          icon: getIcon('chats') },
+  { id: 'automation', label: 'Авто',          icon: getIcon('automation') },
+  { id: 'more',       label: 'Ещё',           icon: getIcon('more') },
 ];
+
+function resolveRoute(hash) {
+  const clean = (hash || '').replace(/^#\/?/, '').trim();
+  if (clean === 'profile' || clean === '/profile') return 'profile';
+  return clean in ROUTES ? clean : DEFAULT_ROUTE;
+}
 
 class Router {
   constructor() {
@@ -72,17 +82,18 @@ class Router {
     }, { passive: true });
 
     // Начальный маршрут
-    const hash = location.hash.replace('#', '') || DEFAULT_ROUTE;
-    await this.navigate(hash in ROUTES ? hash : DEFAULT_ROUTE);
+    const initialRoute = resolveRoute(location.hash);
+    await this.navigate(initialRoute);
 
     window.addEventListener('hashchange', async () => {
-      const id = location.hash.replace('#', '') || DEFAULT_ROUTE;
-      await this.navigate(id in ROUTES ? id : DEFAULT_ROUTE);
+      const targetRoute = resolveRoute(location.hash);
+      await this.navigate(targetRoute);
     });
   }
 
   async navigate(id) {
-    if (id === this._current) return;
+    const routeId = resolveRoute(id);
+    if (routeId === this._current) return;
 
     if (this._abortController) {
       try {
@@ -98,16 +109,17 @@ class Router {
       this._unmountCurrent = null;
     }
 
-    this._current = id;
-    location.hash = id;
-    this._dock?.setActive(id);
+    this._current = routeId;
+    location.hash = routeId;
+    this._dock?.setActive(routeId);
 
     const wrap = document.getElementById('main-wrap');
     if (!wrap) return;
     wrap.innerHTML = '';
 
     try {
-      const cleanup = await ROUTES[id](wrap, { signal: this._abortController.signal });
+      const routeHandler = ROUTES[routeId] || ROUTES[DEFAULT_ROUTE];
+      const cleanup = await routeHandler(wrap, { signal: this._abortController.signal });
       if (typeof cleanup === 'function') {
         this._unmountCurrent = cleanup;
       }
@@ -152,20 +164,3 @@ class Router {
 }
 
 export const router = new Router();
-
-// ── SVG иконки ──────────────────────────────────────────────────
-function homeIcon() {
-  return `<svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></svg>`;
-}
-function ordersIcon() {
-  return `<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3.5"/><path d="M8 3v4M16 3v4M4 10h16"/></svg>`;
-}
-function chatsIcon() {
-  return `<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
-}
-function autoIcon() {
-  return `<svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>`;
-}
-function moreIcon() {
-  return `<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>`;
-}

@@ -157,7 +157,7 @@ def require_panel_unlocked(request: Request, session: dict = Depends(require_own
         # На этапе onboarding панель еще не заблокирована
         return session
 
-    has_pwd = bool(get_state("password_hash"))
+    has_pwd = bool(get_state("panel_password_hash") or get_state("password_hash"))
     if not has_pwd:
         return session
 

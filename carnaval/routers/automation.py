@@ -57,6 +57,16 @@ class TemplateRequest(BaseModel):
     text: str
 
 
+class TemplateSendRequest(BaseModel):
+    chat_id: int
+    username: Optional[str] = None
+
+
+class TemplateRenderRequest(BaseModel):
+    username: Optional[str] = None
+
+
+
 async def _check_confirmation(request: Request, query_confirm: bool = False) -> bool:
     """Проверяет confirm через query-параметр или JSON body."""
     if query_confirm:
@@ -329,6 +339,41 @@ async def delete_template_route(
         return JSONResponse({"success": True})
     except Exception as e:
         return JSONResponse({"error": "bad_request", "message": str(e)}, status_code=400)
+
+
+@router.get("/templates/answer-mode")
+async def get_templates_answer_mode(request: Request, username: Optional[str] = None, user_id: int = Depends(require_user)) -> JSONResponse:
+    """Список шаблонов в режиме ответа с подстановкой переменной username."""
+    items = auto_svc.list_templates_answer_mode(username)
+    return JSONResponse({"templates": items})
+
+
+@router.post("/templates/{i}/render")
+async def render_template_route(i: int, req: TemplateRenderRequest, request: Request, user_id: int = Depends(require_user)) -> JSONResponse:
+    """Предпросмотр рендеринга шаблона с подстановкой $username."""
+    try:
+        rendered = auto_svc.render_template(i, req.username)
+        return JSONResponse({"index": i, "rendered": rendered})
+    except IndexError:
+        return JSONResponse({"error": "not_found", "message": f"Template #{i} not found"}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"error": "bad_request", "message": str(e)}, status_code=400)
+
+
+@router.post("/templates/{i}/send")
+async def send_template_route(i: int, req: TemplateSendRequest, request: Request, user_id: int = Depends(require_user)) -> JSONResponse:
+    """Отправить шаблон ответа в чат FunPay."""
+    try:
+        ok = await auto_svc.send_template_to_chat(i, req.chat_id, req.username)
+        if not ok:
+            return JSONResponse({"error": "send_failed", "message": "Failed to send message via template"}, status_code=500)
+        logger.info(f"AUDIT: user_id={user_id} отправил шаблон #{i} в чат #{req.chat_id}")
+        return JSONResponse({"success": True, "index": i, "chat_id": req.chat_id})
+    except IndexError:
+        return JSONResponse({"error": "not_found", "message": f"Template #{i} not found"}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"error": "bad_request", "message": str(e)}, status_code=400)
+
 
 
 # ─────────────────────────────────────────────────────────────

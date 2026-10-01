@@ -552,6 +552,14 @@ export async function deleteGoldenKey(confirm = true) {
   return await request('DELETE', `/api/more/account/golden-key?confirm=${Boolean(confirm)}`);
 }
 
+export async function reconnectAccount(force = true) {
+  return await request('POST', `/api/more/account/reconnect?force=${Boolean(force)}`);
+}
+
+export async function lockPanel() {
+  return await request('POST', '/api/auth/panel-lock');
+}
+
 export async function getAuditLogs(limit = 100) {
   return await request('GET', `/api/more/audit-logs?limit=${encodeURIComponent(limit)}`);
 }
@@ -600,4 +608,143 @@ export async function createProductsFile(name, goods = []) {
     json: { name, goods },
   });
 }
+
+// ── Bot Parity Функции ───────────────────────────────────────
+
+export async function getWatermark() {
+  return await request('GET', '/api/more/watermark');
+}
+
+export async function updateWatermark(watermark) {
+  return await request('PATCH', '/api/more/watermark', { json: { watermark } });
+}
+
+export async function getGreetingsText() {
+  return await request('GET', '/api/more/greetings/text');
+}
+
+export async function updateGreetingsText(text) {
+  return await request('PATCH', '/api/more/greetings/text', { json: { text } });
+}
+
+export async function getGreetingsCooldown() {
+  return await request('GET', '/api/more/greetings/cooldown');
+}
+
+export async function updateGreetingsCooldown(cooldown) {
+  return await request('PATCH', '/api/more/greetings/cooldown', { json: { cooldown: Number(cooldown) } });
+}
+
+export async function getOrderConfirmSettings() {
+  return await request('GET', '/api/more/order-confirm');
+}
+
+export async function getOrderConfirmReplyText() {
+  return await request('GET', '/api/more/order-confirm/reply-text');
+}
+
+export async function updateOrderConfirmReplyText(text) {
+  return await request('PATCH', '/api/more/order-confirm/reply-text', { json: { text } });
+}
+
+export async function getReviewReplySettings() {
+  return await request('GET', '/api/more/review-reply');
+}
+
+export async function getReviewReplyStar(stars) {
+  return await request('GET', `/api/more/review-reply/${encodeURIComponent(stars)}`);
+}
+
+export async function updateReviewReplyStar(stars, data) {
+  return await request('PATCH', `/api/more/review-reply/${encodeURIComponent(stars)}`, { json: data });
+}
+
+export async function banUser(username, reason = null) {
+  return await request('POST', '/api/more/blacklist/ban', { json: { username, reason } });
+}
+
+export async function unbanUser(username, reason = null) {
+  return await request('POST', '/api/more/blacklist/unban', { json: { username, reason } });
+}
+
+export async function testProxyConnection(proxy_id) {
+  return await request('POST', `/api/more/proxy/${encodeURIComponent(proxy_id)}/test`);
+}
+
+export async function setProxyCheckEnabled(check) {
+  return await request('PATCH', '/api/more/proxy/check', { json: { check: Boolean(check) } });
+}
+
+export async function selectProxy(proxy_id) {
+  return await request('POST', '/api/more/proxy/select', { json: { proxy_id: Number(proxy_id) } });
+}
+
+export async function getAuthorizedUser(target_user_id) {
+  return await request('GET', `/api/more/authorized-users/${encodeURIComponent(target_user_id)}`);
+}
+
+export async function pinPlugin(uuid) {
+  return await request('POST', `/api/more/plugins/${encodeURIComponent(uuid)}/pin`);
+}
+
+export async function getPluginCommands(uuid) {
+  return await request('GET', `/api/more/plugins/${encodeURIComponent(uuid)}/commands`);
+}
+
+export async function getConfigsList() {
+  return await request('GET', '/api/more/configs');
+}
+
+export function downloadConfigUrl(config_type) {
+  return apiUrl(`/api/more/configs/${encodeURIComponent(config_type)}/download`);
+}
+
+export async function uploadConfig(config_type, contentOrFile, confirm = false) {
+  if (contentOrFile instanceof File) {
+    const fd = new FormData();
+    fd.append('file', contentOrFile);
+    fd.append('confirm', String(confirm));
+    return await request('POST', `/api/more/configs/${encodeURIComponent(config_type)}`, { form: fd });
+  } else {
+    return await request('POST', `/api/more/configs/${encodeURIComponent(config_type)}`, {
+      json: { content: String(contentOrFile), confirm: Boolean(confirm) },
+    });
+  }
+}
+
+export async function requestOrderRefund(order_id) {
+  return await request('POST', `/api/orders/${encodeURIComponent(order_id)}/refund/request`);
+}
+
+export async function confirmOrderRefund(order_id) {
+  return await request('POST', `/api/orders/${encodeURIComponent(order_id)}/refund/confirm`);
+}
+
+export async function cancelOrderRefund(order_id) {
+  return await request('POST', `/api/orders/${encodeURIComponent(order_id)}/refund/cancel`);
+}
+
+export async function getTemplatesAnswerMode(username = null) {
+  const qs = username ? `?username=${encodeURIComponent(username)}` : '';
+  return await request('GET', `/api/templates/answer-mode${qs}`);
+}
+
+export async function renderTemplate(i, username = null) {
+  return await request('POST', `/api/templates/${encodeURIComponent(i)}/render`, {
+    json: { username },
+  });
+}
+
+export async function sendTemplate(i, chat_id, username = null) {
+  return await request('POST', `/api/templates/${encodeURIComponent(i)}/send`, {
+    json: { chat_id: Number(chat_id), username },
+  });
+}
+
+export async function sendChatTemplate(chat_id, template_index, username = null) {
+  return await request('POST', `/api/chats/${encodeURIComponent(chat_id)}/templates`, {
+    json: { template_index: Number(template_index), username },
+  });
+}
+
 

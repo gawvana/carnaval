@@ -477,6 +477,40 @@ def delete_template(index: int) -> bool:
     return True
 
 
+def render_template(index: int, username: Optional[str] = None) -> str:
+    """Отрендерить шаблон с подстановкой $username."""
+    with _TEMPLATES_LOCK:
+        tmpls = _get_templates_list()
+        if not (0 <= index < len(tmpls)):
+            raise IndexError(f"Template index {index} out of range")
+        tmpl = tmpls[index]
+    safe_user = cardinal_tools.safe_text(username or "")
+    return tmpl.replace("$username", safe_user)
+
+
+async def send_template_to_chat(index: int, chat_id: int, username: Optional[str] = None) -> bool:
+    """Отправить шаблон в указанный чат FunPay."""
+    from carnaval.services import chats as chats_svc
+    text = render_template(index, username)
+    return await chats_svc.send_message(chat_id, text, chat_name=username)
+
+
+def list_templates_answer_mode(username: Optional[str] = None) -> list[dict[str, Any]]:
+    """Получить шаблоны в режиме ответа (с предпросмотром подстановки $username)."""
+    with _TEMPLATES_LOCK:
+        tmpls = _get_templates_list()
+        safe_user = cardinal_tools.safe_text(username or "")
+        return [
+            {
+                "index": i,
+                "text": t,
+                "rendered": t.replace("$username", safe_user),
+            }
+            for i, t in enumerate(tmpls)
+        ]
+
+
+
 # ─────────────────────────────────────────────────────────────
 # 5. Лоты FunPay продавца
 # ─────────────────────────────────────────────────────────────

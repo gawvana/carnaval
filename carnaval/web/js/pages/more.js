@@ -1,19 +1,21 @@
 /**
  * pages/more.js — Вкладка «Ещё» (Настройки и система)
  *
- * Архитектура:
- *   - Master View: обзор системы + группированное меню категорий (Apple/Telegram Settings)
- *   - Detail View: выбранный раздел с кнопкой «‹ Назад» и горизонтальной полосой категорий
- *   - Нативная интеграция с Telegram BackButton: возврат в каталог по системной кнопке
- *   - 100% сохранение всех API, переключателей, форм и действий
- *   - XSS безопасность (escHtml), доступность (touch target >= 44px), дизайн-система Mattering v2
+ * Архитектура iOS 27:
+ *   - Иерархия: System Overview -> Categories -> Settings -> Actions
+ *   - Master View: обзор системы + группированное меню категорий + быстрые настройки и действия
+ *   - Detail View: выбранный раздел с навигационной полосой категорий
+ *   - 100% чистый UI: без смайликов и эмодзи, только семантические SVG-иконки getIcon(...)
+ *   - Нативная интеграция с Telegram BackButton
+ *   - XSS безопасность (escHtml), доступность (touch target >= 44px)
  */
 
 import * as api from '../api.js';
 import { openConfirmSheet, openSheet, closeSheet } from '../ui/sheet.js';
 import { showToast } from '../ui/toast.js';
 import { tg, haptic } from '../tg.js';
-import { getQualityTier, setQualityTier, QUALITY_TIERS } from '../ui/tier.js';
+import { getQualityTier, setQualityTier } from '../ui/tier.js';
+import { getIcon } from '../ui/icons.js';
 
 // ── Определение категорий ────────────────────────────────────────────────────
 
@@ -21,42 +23,42 @@ const SECTIONS = [
   {
     id: 'notifications',
     label: 'Уведомления',
-    icon: '🔔',
+    iconName: 'bell',
     iconCls: 'more-cat-icon-notif',
     desc: 'BlockList, фильтры сообщений и оповещения',
   },
   {
     id: 'greetings',
     label: 'Сообщения',
-    icon: '💬',
+    iconName: 'message',
     iconCls: 'more-cat-icon-msg',
     desc: 'Приветствия, подтверждения заказов и отзывы',
   },
   {
     id: 'blacklist',
     label: 'Чёрный список',
-    icon: '🚫',
+    iconName: 'ban',
     iconCls: 'more-cat-icon-black',
     desc: 'Блокировка нежелательных покупателей',
   },
   {
     id: 'plugins',
     label: 'Плагины',
-    icon: '🧩',
+    iconName: 'plugins',
     iconCls: 'more-cat-icon-plugins',
     desc: 'Расширения Cardinal, включение и загрузка .py',
   },
   {
     id: 'security',
     label: 'Безопасность',
-    icon: '🛡️',
+    iconName: 'security',
     iconCls: 'more-cat-icon-sec',
     desc: 'Golden Key, прокси, сессии и пароль панели',
   },
   {
     id: 'system',
     label: 'Система',
-    icon: '⚙️',
+    iconName: 'settings',
     iconCls: 'more-cat-icon-sys',
     desc: 'Журнал логов, бэкапы, перезапуск бота',
   },
@@ -72,16 +74,16 @@ const GREETING_LABELS = {
   'OrderConfirm.sendReply':         { label: 'Авто-ответ при подтверждении', type: 'toggle' },
   'OrderConfirm.replyText':         { label: 'Текст подтверждения заказа',   type: 'text'   },
   'OrderConfirm.watermark':         { label: 'Водяной знак Cardinal',        type: 'toggle' },
-  'ReviewReply.star1Reply':         { label: '⭐ Ответ на 1 звезду',          type: 'toggle' },
-  'ReviewReply.star1ReplyText':     { label: '⭐ Текст ответа (1★)',          type: 'text'   },
-  'ReviewReply.star2Reply':         { label: '⭐⭐ Ответ на 2 звезды',        type: 'toggle' },
-  'ReviewReply.star2ReplyText':     { label: '⭐⭐ Текст ответа (2★)',        type: 'text'   },
-  'ReviewReply.star3Reply':         { label: '⭐⭐⭐ Ответ на 3 звезды',      type: 'toggle' },
-  'ReviewReply.star3ReplyText':     { label: '⭐⭐⭐ Текст ответа (3★)',      type: 'text'   },
-  'ReviewReply.star4Reply':         { label: '⭐⭐⭐⭐ Ответ на 4 звезды',    type: 'toggle' },
-  'ReviewReply.star4ReplyText':     { label: '⭐⭐⭐⭐ Текст ответа (4★)',    type: 'text'   },
-  'ReviewReply.star5Reply':         { label: '⭐⭐⭐⭐⭐ Ответ на 5 звёзд',   type: 'toggle' },
-  'ReviewReply.star5ReplyText':     { label: '⭐⭐⭐⭐⭐ Текст ответа (5★)',  type: 'text'   },
+  'ReviewReply.star1Reply':         { label: 'Ответ на отзыв (1 звезда)',    type: 'toggle' },
+  'ReviewReply.star1ReplyText':     { label: 'Текст ответа на 1 звезду',     type: 'text'   },
+  'ReviewReply.star2Reply':         { label: 'Ответ на отзыв (2 звезды)',    type: 'toggle' },
+  'ReviewReply.star2ReplyText':     { label: 'Текст ответа на 2 звезды',     type: 'text'   },
+  'ReviewReply.star3Reply':         { label: 'Ответ на отзыв (3 звезды)',    type: 'toggle' },
+  'ReviewReply.star3ReplyText':     { label: 'Текст ответа на 3 звезды',     type: 'text'   },
+  'ReviewReply.star4Reply':         { label: 'Ответ на отзыв (4 звезды)',    type: 'toggle' },
+  'ReviewReply.star4ReplyText':     { label: 'Текст ответа на 4 звезды',     type: 'text'   },
+  'ReviewReply.star5Reply':         { label: 'Ответ на отзыв (5 звёзд)',     type: 'toggle' },
+  'ReviewReply.star5ReplyText':     { label: 'Текст ответа на 5 звёзд',      type: 'text'   },
 };
 
 let currentTabId = null;
@@ -99,7 +101,7 @@ export async function renderMore(container, initialSection = null) {
   }
 }
 
-// ── Каталог категорий (Master View) ──────────────────────────────────────────
+// ── Каталог категорий (Master View — Иерархия iOS 27) ─────────────────────────
 
 async function renderIndexView(root) {
   currentTabId = null;
@@ -118,11 +120,13 @@ async function renderIndexView(root) {
   const uptimeMinutes = Math.floor((healthRes.uptime_sec || 0) / 60);
 
   root.innerHTML = `
-    <!-- Glance Card: статус системы -->
+    <!-- 1. System Overview (Glance Card) -->
     <div class="more-glance-card">
       <div class="more-glance-top">
         <div class="more-glance-brand">
-          <div class="more-glance-icon">🐦</div>
+          <div class="more-glance-icon" aria-hidden="true">
+            ${getIcon('cpu')}
+          </div>
           <div>
             <div class="more-glance-title">FunPay Cardinal</div>
             <div class="more-glance-version">Carnaval v${escHtml(version)}</div>
@@ -149,14 +153,14 @@ async function renderIndexView(root) {
       </div>
     </div>
 
-    <!-- Список категорий настроек -->
-    <p class="more-group-label">Параметры и управление</p>
+    <!-- 2. Categories (Параметры и управление) -->
+    <p class="more-group-label">Параметры и разделы</p>
     <div class="more-menu-card">
       ${SECTIONS.map(s => `
         <button class="more-menu-row press" data-section="${s.id}" type="button">
           <div class="more-menu-left">
             <div class="more-cat-icon-box ${s.iconCls}">
-              ${s.icon}
+              ${getIcon(s.iconName)}
             </div>
             <div class="more-menu-texts">
               <div class="more-menu-name">${escHtml(s.label)}</div>
@@ -164,18 +168,105 @@ async function renderIndexView(root) {
             </div>
           </div>
           <div class="more-menu-right">
-            <span class="more-menu-arrow">›</span>
+            <span class="more-menu-arrow">${getIcon('chevron')}</span>
           </div>
         </button>
       `).join('')}
     </div>
+
+    <!-- 3. Settings (Быстрые настройки профиля и производительности) -->
+    <p class="more-group-label">Профиль и графика</p>
+    <div class="more-menu-card">
+      <button class="more-menu-row press" id="open-profile-entry" type="button">
+        <div class="more-menu-left">
+          <div class="more-cat-icon-box" style="background:linear-gradient(135deg, var(--primary), var(--p));color:#fff">
+            ${getIcon('profile')}
+          </div>
+          <div class="more-menu-texts">
+            <div class="more-menu-name">Центр профиля и сессий</div>
+            <div class="more-menu-sub">Учётные записи Telegram & FunPay, безопасность, метрики</div>
+          </div>
+        </div>
+        <div class="more-menu-right">
+          <span class="more-menu-arrow">${getIcon('chevron')}</span>
+        </div>
+      </button>
+      <div style="padding: 12px 16px; border-top: 1px solid var(--outline)">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+          <span style="font-size:14px; font-weight:600; color:var(--on)">Профиль графики</span>
+          <span style="font-size:12px; color:var(--muted)">Адаптивная отрисовка</span>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px" id="index-tier-selector">
+          <button type="button" class="more-btn-sm press index-tier-btn" data-tier="SAVER" style="height:36px;font-size:12px">Эко</button>
+          <button type="button" class="more-btn-sm press index-tier-btn" data-tier="BALANCED" style="height:36px;font-size:12px">Баланс</button>
+          <button type="button" class="more-btn-sm press index-tier-btn" data-tier="HIGH" style="height:36px;font-size:12px">Ультра</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. Actions (Быстрые действия) -->
+    <p class="more-group-label">Быстрые действия</p>
+    <div class="more-menu-card" style="padding:14px; display:grid; grid-template-columns:repeat(2, 1fr); gap:10px">
+      <button id="quick-backup-btn" class="more-btn-sm more-btn-primary press" style="height:42px; display:inline-flex; align-items:center; justify-content:center; gap:6px" type="button">
+        ${getIcon('backup')} Бэкап
+      </button>
+      <button id="quick-restart-btn" class="more-btn-sm more-btn-warn press" style="height:42px; display:inline-flex; align-items:center; justify-content:center; gap:6px" type="button">
+        ${getIcon('restart')} Перезапуск
+      </button>
+    </div>
   `;
 
-  root.querySelectorAll('.more-menu-row').forEach(row => {
+  // Навигация по категориям
+  root.querySelectorAll('.more-menu-row[data-section]').forEach(row => {
     row.addEventListener('click', () => {
       const sectionId = row.dataset.section;
       haptic('selection');
       openSection(sectionId, root);
+    });
+  });
+
+  // Переход в профиль
+  root.querySelector('#open-profile-entry')?.addEventListener('click', () => {
+    haptic('selection');
+    location.hash = 'profile';
+  });
+
+  // Быстрые кнопки бэкапа и рестарта
+  root.querySelector('#quick-backup-btn')?.addEventListener('click', () => {
+    haptic('selection');
+    window.location.href = api.getBackupUrl();
+  });
+
+  root.querySelector('#quick-restart-btn')?.addEventListener('click', () => {
+    haptic('impact', 'heavy');
+    openConfirmSheet('Перезапустить Cardinal? Сервис перезагрузит процесс.', async () => {
+      try {
+        await api.restartCardinal(true);
+        showToast('Перезапуск запущен…', 'success');
+      } catch (ex) {
+        showToast('Ошибка: ' + ex.message, 'error');
+      }
+    });
+  });
+
+  // Селектор графики
+  const updateIndexTierButtons = () => {
+    const active = getQualityTier();
+    root.querySelectorAll('.index-tier-btn').forEach((btn) => {
+      const isCur = btn.dataset.tier === active;
+      btn.style.background = isCur ? 'var(--primary)' : 'var(--track)';
+      btn.style.color = isCur ? 'var(--on-primary)' : 'var(--on)';
+      btn.style.fontWeight = isCur ? '700' : '500';
+    });
+  };
+  updateIndexTierButtons();
+
+  root.querySelectorAll('.index-tier-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      haptic('impact', 'light');
+      setQualityTier(btn.dataset.tier);
+      updateIndexTierButtons();
+      showToast(`Профиль графики: ${btn.textContent.trim()}`, 'success');
     });
   });
 }
@@ -196,10 +287,10 @@ async function openSection(sectionId, root) {
     <!-- Верхняя навигационная панель -->
     <div class="more-detail-nav">
       <button class="more-back-btn press" id="more-back" type="button" aria-label="Вернуться в меню">
-        <span>‹</span> Меню
+        ${getIcon('chevron-left')} Назад
       </button>
       <h2 class="more-detail-title">
-        <span>${sectionMeta.icon}</span> ${escHtml(sectionMeta.label)}
+        <span>${getIcon(sectionMeta.iconName)}</span> ${escHtml(sectionMeta.label)}
       </h2>
       <div style="width:50px"></div>
     </div>
@@ -208,7 +299,7 @@ async function openSection(sectionId, root) {
     <div class="more-pills-scroll" role="tablist" aria-label="Разделы настроек">
       ${SECTIONS.map(s => `
         <button class="more-pill-btn press${s.id === sectionId ? ' active' : ''}" data-pill="${s.id}" type="button" role="tab" aria-selected="${s.id === sectionId}">
-          <span>${s.icon}</span> ${escHtml(s.label)}
+          <span>${getIcon(s.iconName)}</span> ${escHtml(s.label)}
         </button>
       `).join('')}
     </div>
@@ -326,9 +417,9 @@ async function renderGreetings(body) {
     if (section !== lastGroup) {
       lastGroup = section;
       const labels = {
-        Greetings: '💬 Приветствие в новых чатах',
-        OrderConfirm: '📦 Подтверждение заказа',
-        ReviewReply: '⭐ Автоответы на отзывы',
+        Greetings: 'Приветствие в новых чатах',
+        OrderConfirm: 'Подтверждение заказа',
+        ReviewReply: 'Автоответы на отзывы',
       };
 
       const groupWrap = document.createElement('div');
@@ -401,7 +492,9 @@ async function renderBlacklist(body) {
       <div class="more-card-title">Добавить в чёрный список</div>
       <div class="more-input-box" style="margin-bottom:8px">
         <input id="bl-inp" class="more-field" type="text" placeholder="@username покупателя">
-        <button id="bl-add" class="more-btn-save press" type="button">Добавить</button>
+        <button id="bl-add" class="more-btn-save press" style="display:inline-flex;align-items:center;gap:4px" type="button">
+          ${getIcon('plus')} Добавить
+        </button>
       </div>
     </div>
 
@@ -430,11 +523,11 @@ async function renderBlacklist(body) {
     listEl.innerHTML = bl.map(u => `
       <div class="more-item-row" data-user="${escHtml(u)}">
         <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-size:16px">🚫</span>
+          <span style="color:var(--err);display:inline-flex;align-items:center">${getIcon('ban')}</span>
           <span class="more-item-name">@${escHtml(u)}</span>
         </div>
-        <button class="more-btn-sm more-btn-danger press bl-del" data-user="${escHtml(u)}" type="button">
-          Удалить
+        <button class="more-btn-sm more-btn-danger press bl-del" data-user="${escHtml(u)}" style="display:inline-flex;align-items:center;gap:4px" type="button">
+          ${getIcon('trash')} Удалить
         </button>
       </div>
     `).join('');
@@ -495,8 +588,8 @@ async function renderPlugins(body) {
         <div class="more-item-name">Дополнения Cardinal</div>
         <div class="more-item-sub">Загружайте проверенные Python-скрипты</div>
       </div>
-      <label class="more-btn-sm more-btn-primary press" style="cursor:pointer;height:38px;padding:0 16px;border-radius:var(--rf)">
-        📦 Загрузить .py
+      <label class="more-btn-sm more-btn-primary press" style="cursor:pointer;height:38px;padding:0 16px;border-radius:var(--rf);display:inline-flex;align-items:center;gap:6px">
+        ${getIcon('plus')} Загрузить .py
         <input type="file" accept=".py" id="pl-file" style="display:none">
       </label>
     </div>
@@ -531,8 +624,8 @@ async function renderPlugins(body) {
             ${pl.credits ? `<div class="more-item-sub">Автор: ${escHtml(pl.credits)}</div>` : ''}
           </div>
           <div class="more-actions-group">
-            <button class="more-btn-sm more-btn-danger press pl-del" data-uuid="${escHtml(pl.uuid)}" data-name="${escHtml(pl.name)}" type="button">
-              Удалить
+            <button class="more-btn-sm more-btn-danger press pl-del" data-uuid="${escHtml(pl.uuid)}" data-name="${escHtml(pl.name)}" style="display:inline-flex;align-items:center;gap:4px" type="button">
+              ${getIcon('trash')} Удалить
             </button>
             <label class="sw">
               <input type="checkbox" class="pl-toggle" data-uuid="${escHtml(pl.uuid)}" ${pl.enabled ? 'checked' : ''} aria-label="Включить плагин ${escHtml(pl.name)}">
@@ -594,9 +687,12 @@ async function renderPlugins(body) {
     openConfirmSheet({
       title: 'Загрузка плагина',
       message: `
-        <div style="background:var(--err-c);color:var(--on-err-c);padding:12px;border-radius:12px;font-size:13px;margin-bottom:12px;line-height:1.4">
-          ⚠️ <b>ВНИМАНИЕ</b>: Плагины исполняются сервером Python!<br>
-          Загружайте только файлы из официального канала @fpc_plugins.
+        <div style="background:var(--err-c);color:var(--on-err-c);padding:12px;border-radius:12px;font-size:13px;margin-bottom:12px;line-height:1.4;display:flex;align-items:flex-start;gap:8px">
+          <span style="flex-shrink:0">${getIcon('alert')}</span>
+          <div>
+            <b>ВНИМАНИЕ</b>: Плагины исполняются сервером Python!<br>
+            Загружайте только файлы из проверенных источников.
+          </div>
         </div>
         Загрузить плагин <b>${escHtml(file.name)}</b>?
       `,
@@ -634,7 +730,6 @@ async function renderSecurity(body) {
   const auditLogs = auditRes.logs || [];
   const gkMasked = accInfo.golden_key_masked || (accInfo.golden_key_configured ? '••••••••••••••••' : 'Не задан');
   const hasPassword = Boolean(setupStatus?.has_password);
-  const hasFunPay = Boolean(setupStatus?.has_funpay);
   const hasProxy = Boolean(setupStatus?.has_proxy || proxyInfo.enabled);
 
   body.innerHTML = `
@@ -664,15 +759,17 @@ async function renderSecurity(body) {
     <!-- FunPay аккаунт и Golden Key -->
     <div class="more-content-card">
       <div class="more-card-title">Аккаунт FunPay</div>
-      <div class="more-item-name" style="margin-bottom:4px">👤 ${escHtml(accInfo.username || 'Не подключён')} ${accInfo.id ? `(ID: ${accInfo.id})` : ''}</div>
+      <div class="more-item-name" style="margin-bottom:4px;display:flex;align-items:center;gap:6px">
+        ${getIcon('funpay')} ${escHtml(accInfo.username || 'Не подключён')} ${accInfo.id ? `(ID: ${accInfo.id})` : ''}
+      </div>
       <div class="more-item-sub" style="margin-bottom:14px">Golden Key: <code>${escHtml(gkMasked)}</code></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button id="gk-btn" class="more-btn-sm more-btn-warn press" style="height:38px;padding:0 14px" type="button">
-          🔑 Сменить Golden Key
+        <button id="gk-btn" class="more-btn-sm more-btn-warn press" style="height:38px;padding:0 14px;display:inline-flex;align-items:center;gap:6px" type="button">
+          ${getIcon('key')} Сменить Golden Key
         </button>
         ${accInfo.golden_key_configured ? `
-          <button id="gk-del-btn" class="more-btn-sm more-btn-danger press" style="height:38px;padding:0 14px" type="button">
-            Удалить ключ
+          <button id="gk-del-btn" class="more-btn-sm more-btn-danger press" style="height:38px;padding:0 14px;display:inline-flex;align-items:center;gap:6px" type="button">
+            ${getIcon('trash')} Удалить ключ
           </button>
         ` : ''}
       </div>
@@ -684,8 +781,8 @@ async function renderSecurity(body) {
       <p class="more-item-sub" style="margin:0 0 14px;line-height:1.4">
         Защищает настройки и конфиденциальные данные авторизации по алгоритму Argon2id.
       </p>
-      <button id="change-pwd-btn" class="more-btn-sm more-btn-primary press" style="height:42px;width:100%;font-size:14px" type="button">
-        🛡️ Сменить мастер-пароль панели
+      <button id="change-pwd-btn" class="more-btn-sm more-btn-primary press" style="height:42px;width:100%;font-size:14px;display:inline-flex;align-items:center;justify-content:center;gap:8px" type="button">
+        ${getIcon('security')} Сменить мастер-пароль панели
       </button>
     </div>
 
@@ -708,8 +805,8 @@ async function renderSecurity(body) {
           </div>
         `).join('') : '<div class="more-empty-state">Нет других сессий</div>'}
       </div>
-      <button id="logout-all-btn" class="more-btn-sm more-btn-danger press" style="height:38px;width:100%" type="button">
-        🚪 Завершить все остальные сессии
+      <button id="logout-all-btn" class="more-btn-sm more-btn-danger press" style="height:38px;width:100%;display:inline-flex;align-items:center;justify-content:center;gap:8px" type="button">
+        ${getIcon('logout')} Завершить все остальные сессии
       </button>
     </div>
 
@@ -728,7 +825,9 @@ async function renderSecurity(body) {
       ` : ''}
       <div class="more-input-box" style="margin:10px 0 8px">
         <input id="proxy-inp" class="more-field" type="text" placeholder="http://user:pass@ip:port">
-        <button id="proxy-add" class="more-btn-save press" type="button">Добавить</button>
+        <button id="proxy-add" class="more-btn-save press" style="display:inline-flex;align-items:center;gap:4px" type="button">
+          ${getIcon('plus')} Добавить
+        </button>
       </div>
       <div id="proxy-list"></div>
     </div>
@@ -762,37 +861,34 @@ async function renderSecurity(body) {
   // Смена Golden Key
   body.querySelector('#gk-btn')?.addEventListener('click', () => {
     haptic('impact', 'medium');
-    openSheet({
-      title: '🔑 Смена Golden Key',
-      content: `
+    openSheet('Смена Golden Key', `
+      <div style="padding:16px 0">
         <p style="font-size:13px;color:var(--muted);margin-bottom:12px">
           Введите 32-значный golden_key из cookies FunPay.
         </p>
-        <input id="gk-inp" type="text" class="more-field" placeholder="32-значный ключ" style="width:100%">
-      `,
-      actions: [
-        { label: 'Отмена', style: 'secondary', onClick: () => closeSheet() },
-        {
-          label: 'Сменить', style: 'primary',
-          onClick: async () => {
-            const newKey = document.querySelector('#gk-inp')?.value?.trim();
-            if (!newKey) { showToast('Введите ключ', 'error'); return; }
-            closeSheet();
-            openConfirmSheet(
-              'Сменить Golden Key? Бот переподключится к FunPay без перезапуска.',
-              async () => {
-                try {
-                  await api.changeGoldenKey(newKey, true);
-                  showToast('Golden Key обновлён', 'success');
-                  renderSecurity(body);
-                } catch (ex) {
-                  showToast('Ошибка: ' + ex.message, 'error');
-                }
-              }
-            );
-          },
-        },
-      ],
+        <input id="gk-inp" type="text" class="more-field" placeholder="32-значный ключ" style="width:100%;margin-bottom:14px">
+        <button class="btn press" id="gk-submit-btn" style="width:100%;background:var(--primary);color:var(--on-primary);height:44px">
+          Сохранить ключ
+        </button>
+      </div>
+    `);
+
+    document.getElementById('gk-submit-btn')?.addEventListener('click', async () => {
+      const newKey = document.querySelector('#gk-inp')?.value?.trim();
+      if (!newKey) { showToast('Введите ключ', 'error'); return; }
+      closeSheet();
+      openConfirmSheet(
+        'Сменить Golden Key? Бот переподключится к FunPay без перезапуска.',
+        async () => {
+          try {
+            await api.changeGoldenKey(newKey, true);
+            showToast('Golden Key обновлён', 'success');
+            renderSecurity(body);
+          } catch (ex) {
+            showToast('Ошибка: ' + ex.message, 'error');
+          }
+        }
+      );
     });
   });
 
@@ -816,39 +912,34 @@ async function renderSecurity(body) {
   // Смена пароля панели
   body.querySelector('#change-pwd-btn')?.addEventListener('click', () => {
     haptic('impact', 'medium');
-    openSheet({
-      title: '🛡️ Смена пароля панели',
-      content: `
-        <div style="display:flex;flex-direction:column;gap:10px">
-          <input id="pwd-old" type="password" class="more-field" placeholder="Текущий пароль">
-          <input id="pwd-new" type="password" class="more-field" placeholder="Новый пароль (мин. 6 симв.)">
-          <input id="pwd-conf" type="password" class="more-field" placeholder="Повторите новый пароль">
-        </div>
-      `,
-      actions: [
-        { label: 'Отмена', style: 'secondary', onClick: () => closeSheet() },
-        {
-          label: 'Сохранить', style: 'primary',
-          onClick: async () => {
-            const oldP = document.getElementById('pwd-old')?.value || '';
-            const newP = document.getElementById('pwd-new')?.value || '';
-            const confP = document.getElementById('pwd-conf')?.value || '';
+    openSheet('Смена пароля панели', `
+      <div style="display:flex;flex-direction:column;gap:10px;padding:16px 0">
+        <input id="pwd-old" type="password" class="more-field" placeholder="Текущий пароль">
+        <input id="pwd-new" type="password" class="more-field" placeholder="Новый пароль (мин. 6 симв.)">
+        <input id="pwd-conf" type="password" class="more-field" placeholder="Повторите новый пароль">
+        <button class="btn press" id="pwd-submit-btn" style="margin-top:6px;width:100%;background:var(--primary);color:var(--on-primary);height:44px">
+          Сохранить пароль
+        </button>
+      </div>
+    `);
 
-            if (!oldP) { showToast('Введите текущий пароль', 'error'); return; }
-            if (newP.length < 6) { showToast('Пароль должен быть от 6 символов', 'error'); return; }
-            if (newP !== confP) { showToast('Пароли не совпадают', 'error'); return; }
+    document.getElementById('pwd-submit-btn')?.addEventListener('click', async () => {
+      const oldP = document.getElementById('pwd-old')?.value || '';
+      const newP = document.getElementById('pwd-new')?.value || '';
+      const confP = document.getElementById('pwd-conf')?.value || '';
 
-            try {
-              await api.changePassword(oldP, newP);
-              closeSheet();
-              showToast('Пароль панели успешно изменён', 'success');
-              renderSecurity(body);
-            } catch (ex) {
-              showToast('Ошибка: ' + ex.message, 'error');
-            }
-          },
-        },
-      ],
+      if (!oldP) { showToast('Введите текущий пароль', 'error'); return; }
+      if (newP.length < 6) { showToast('Пароль должен быть от 6 символов', 'error'); return; }
+      if (newP !== confP) { showToast('Пароли не совпадают', 'error'); return; }
+
+      try {
+        await api.changePassword(oldP, newP);
+        closeSheet();
+        showToast('Пароль панели успешно изменён', 'success');
+        renderSecurity(body);
+      } catch (ex) {
+        showToast('Ошибка: ' + ex.message, 'error');
+      }
     });
   });
 
@@ -888,7 +979,7 @@ async function renderSecurity(body) {
         <span class="more-item-name" style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis">${escHtml(p.proxy)}</span>
         <div class="more-actions-group">
           <button class="more-btn-sm more-btn-primary press proxy-act" data-pid="${p.id}" type="button">Выбрать</button>
-          <button class="more-btn-sm more-btn-danger press proxy-del" data-pid="${p.id}" type="button">✕</button>
+          <button class="more-btn-sm more-btn-danger press proxy-del" data-pid="${p.id}" style="display:inline-flex;align-items:center;justify-content:center" type="button">${getIcon('close')}</button>
         </div>
       </div>
     `).join('') : '<div class="more-empty-state" style="padding:10px 0">Список прокси пуст</div>';
@@ -944,8 +1035,8 @@ async function renderSecurity(body) {
     auListEl.innerHTML = list.length ? list.map(uid => `
       <div class="more-item-row">
         <span class="more-item-name">ID: ${escHtml(String(uid))}</span>
-        <button class="more-btn-sm more-btn-danger press au-del" data-uid="${escHtml(String(uid))}" type="button">
-          Отозвать доступ
+        <button class="more-btn-sm more-btn-danger press au-del" data-uid="${escHtml(String(uid))}" style="display:inline-flex;align-items:center;gap:4px" type="button">
+          ${getIcon('trash')} Отозвать
         </button>
       </div>
     `).join('') : '<div class="more-empty-state" style="padding:10px 0">Нет авторизованных администраторов</div>';
@@ -981,22 +1072,22 @@ async function renderSystem(body) {
   body.innerHTML = `
     <!-- Действия и бэкап -->
     <div class="more-content-card">
-      <div class="more-card-title">Резервное копирование и статус</div>
+      <div class="more-card-title">Резервное копирование и управление</div>
       <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:10px;margin-bottom:12px">
-        <a id="backup-btn" class="more-btn-sm more-btn-primary press" href="${api.getBackupUrl()}" download style="height:42px;text-decoration:none">
-          💾 Скачать бэкап
+        <a id="backup-btn" class="more-btn-sm more-btn-primary press" href="${api.getBackupUrl()}" download style="height:42px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px">
+          ${getIcon('backup')} Скачать бэкап
         </a>
-        <label class="more-btn-sm more-btn-secondary press" style="cursor:pointer;height:42px">
-          📥 Восстановить
+        <label class="more-btn-sm more-btn-secondary press" style="cursor:pointer;height:42px;display:inline-flex;align-items:center;justify-content:center;gap:6px">
+          ${getIcon('restore')} Восстановить
           <input type="file" accept=".zip" id="restore-file" style="display:none">
         </label>
       </div>
       <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:10px">
-        <button id="restart-btn" class="more-btn-sm more-btn-warn press" style="height:42px" type="button">
-          🔄 Перезапуск
+        <button id="restart-btn" class="more-btn-sm more-btn-warn press" style="height:42px;display:inline-flex;align-items:center;justify-content:center;gap:6px" type="button">
+          ${getIcon('restart')} Перезапуск
         </button>
-        <button id="stop-btn" class="more-btn-sm more-btn-danger press" style="height:42px" type="button">
-          ⛔ Выключить
+        <button id="stop-btn" class="more-btn-sm more-btn-danger press" style="height:42px;display:inline-flex;align-items:center;justify-content:center;gap:6px" type="button">
+          ${getIcon('shutdown')} Выключить
         </button>
       </div>
     </div>
@@ -1007,13 +1098,13 @@ async function renderSystem(body) {
       <div class="more-item-sub" style="margin-bottom:12px">Адаптивный профиль рендеринга для плавной работы и экономии аккумулятора</div>
       <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:8px" id="tier-selector">
         <button type="button" class="more-btn-sm press tier-btn" data-tier="SAVER" style="height:40px;font-size:12px">
-          🔋 Эко
+          Эко
         </button>
         <button type="button" class="more-btn-sm press tier-btn" data-tier="BALANCED" style="height:40px;font-size:12px">
-          ⚖️ Баланс
+          Баланс
         </button>
         <button type="button" class="more-btn-sm press tier-btn" data-tier="HIGH" style="height:40px;font-size:12px">
-          ✨ Ультра
+          Ультра
         </button>
       </div>
     </div>
@@ -1023,8 +1114,12 @@ async function renderSystem(body) {
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <div class="more-card-title" style="margin:0">Журнал Cardinal</div>
         <div style="display:flex;gap:8px">
-          <button id="logs-clear" class="more-btn-sm more-btn-danger press" type="button">🗑 Очистить</button>
-          <button id="logs-refresh" class="more-btn-sm more-btn-secondary press" type="button">↻ Обновить</button>
+          <button id="logs-clear" class="more-btn-sm more-btn-danger press" style="display:inline-flex;align-items:center;gap:4px" type="button">
+            ${getIcon('trash')} Очистить
+          </button>
+          <button id="logs-refresh" class="more-btn-sm more-btn-secondary press" style="display:inline-flex;align-items:center;gap:4px" type="button">
+            ${getIcon('refresh')} Обновить
+          </button>
         </div>
       </div>
       <div class="more-logs-console" id="logs-box">

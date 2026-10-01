@@ -196,6 +196,18 @@ async def panel_unlock(req: PanelUnlockRequest, request: Request, session: dict 
     return JSONResponse({"status": "ok", "panel_unlocked": True})
 
 
+@router.post("/auth/panel-lock")
+async def lock_panel(request: Request, session: dict = Depends(require_telegram_auth)) -> JSONResponse:
+    """Блокировка панели управления (Lock Panel)."""
+    token = getattr(request.state, "session_token", None) or extract_session_token(request)
+    if token:
+        auth.lock_panel_session(token)
+    telegram_user_id = session["telegram_user_id"]
+    ip = request.client.host if request.client else ""
+    log_audit("panel_locked", telegram_user_id, ip, "Панель управления заблокирована")
+    return JSONResponse({"status": "ok", "panel_unlocked": False})
+
+
 @router.get("/me")
 @router.get("/auth/me")
 async def get_current_user_info(request: Request, session: dict = Depends(require_telegram_auth)) -> JSONResponse:

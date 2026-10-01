@@ -614,16 +614,22 @@ class Cardinal(object):
             return
 
         logger.info(_("crd_raise_loop_started"))
-        while True:
+        while getattr(self, "running", True):
             try:
                 if not self.MAIN_CFG["FunPay"].getboolean("autoRaise"):
-                    time.sleep(10)
+                    for _ in range(10):
+                        if not getattr(self, "running", True):
+                            return
+                        time.sleep(1)
                     continue
                 next_time = self.raise_lots()
                 delay = next_time - int(time.time())
                 if delay <= 0:
                     continue
-                time.sleep(delay)
+                for _ in range(int(delay)):
+                    if not getattr(self, "running", True):
+                        return
+                    time.sleep(1)
             except:
                 logger.debug("TRACEBACK", exc_info=True)
 
@@ -633,8 +639,13 @@ class Cardinal(object):
         """
         logger.info(_("crd_session_loop_started"))
         sleep_time = 3600
-        while True:
-            time.sleep(sleep_time)
+        while getattr(self, "running", True):
+            for _ in range(int(sleep_time)):
+                if not getattr(self, "running", True):
+                    return
+                time.sleep(1)
+            if not getattr(self, "running", True):
+                return
             result = self.update_session()
             sleep_time = 60 if not result else 3600
 
@@ -705,8 +716,9 @@ class Cardinal(object):
         return self
 
     def reinit_account(self) -> bool:
-        """Повторная инициализация аккаунта после настройки Golden Key в Mini App."""
+        """Повторная инициализация аккаунта через единый AccountLifecycleManager."""
         try:
+            from carnaval.services.account_lifecycle import lifecycle_manager
             from carnaval.secrets_manager import SecretManager
             g_key = (
                 SecretManager.get_secret("golden_key")
@@ -714,52 +726,21 @@ class Cardinal(object):
                 or os.getenv("FUNPAY_GOLDEN_KEY", "").strip()
                 or os.getenv("GOLDEN_KEY", "").strip()
             )
-        except Exception:
-            g_key = (
-                self.MAIN_CFG["FunPay"].get("golden_key", "").strip()
-                or os.getenv("FUNPAY_GOLDEN_KEY", "").strip()
-                or os.getenv("GOLDEN_KEY", "").strip()
-            )
+            if not g_key:
+                logger.warning("FunPay: reinit_account вызван, но Golden Key не найден ни в хранилище, ни в ENV.")
+                return False
 
-        if not g_key:
-            logger.warning("FunPay: reinit_account вызван, но Golden Key не найден ни в хранилище, ни в ENV.")
-            return False
+            clean_key = g_key.strip()
+            if len(clean_key) != 32:
+                logger.warning(f"FunPay: Golden Key имеет некорректную длину ({len(clean_key)} симв., ожидается ровно 32).")
+                return False
 
-        clean_key = g_key.strip()
-        if len(clean_key) != 32:
-            logger.warning(f"FunPay: Golden Key имеет некорректную длину ({len(clean_key)} симв., ожидается ровно 32).")
-            return False
-
-        self.account.golden_key = clean_key
-        self.account.phpsessid = None
-        try:
-            logger.info("FunPay: авторизация на funpay.com через Account.get(update_phpsessid=True)...")
-            self.account.get(update_phpsessid=True)
-            try:
-                self.balance = self.get_balance()
-            except Exception as bal_err:
-                logger.warning(f"FunPay: не удалось получить баланс через лоты ({bal_err}), используем базовый баланс.")
-                self.balance = getattr(self.account, "total_balance", 0)
-
-            if self.runner is None:
-                self.runner = FunPayAPI.Runner(self.account, self.old_mode_enabled)
-                Thread(target=self.runner.loop, daemon=True).start()
-                Thread(target=self.lots_raise_loop, daemon=True).start()
-                Thread(target=self.update_session_loop, daemon=True).start()
-
-            try:
-                self.__update_profile(infinite_polling=False, attempts=2)
-            except Exception as prof_err:
-                logger.warning(f"FunPay: не удалось обновить профиль ({prof_err}).")
-
-            self.running = True
-            logger.info(f"FunPay: аккаунт {self.account.username} (ID: {self.account.id}) успешно активирован!")
+            lifecycle_manager._sync_authenticate(clean_key)
+            lifecycle_manager._sync_start_runner()
+            logger.info("FunPay: аккаунт успешно активирован через AccountLifecycleManager!")
             return True
-        except FunPayAPI.exceptions.UnauthorizedError as e:
-            logger.error(f"FunPay: неверный или устаревший Golden Key (UnauthorizedError): {e}")
-            return False
         except Exception as e:
-            logger.error(f"FunPay: ошибка подключения аккаунта: {e}")
+            logger.error(f"FunPay: ошибка авторизации через AccountLifecycleManager: {e}")
             return False
 
     def run(self):
@@ -790,10 +771,16 @@ class Cardinal(object):
 
     def stop(self):
         """
-        Останавливает кардинал. Не используется.
+        Останавливает кардинал, освобождает lock и останавливает Telegram бота.
         """
+        self.running = False
         self.run_id += 1
         self.run_handlers(self.pre_stop_handlers, (self,))
+        if hasattr(self, "telegram") and self.telegram and hasattr(self.telegram, "stop"):
+            try:
+                self.telegram.stop()
+            except Exception:
+                pass
         self.run_handlers(self.post_stop_handlers, (self,))
 
     def update_lots_and_categories(self):

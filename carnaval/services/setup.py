@@ -129,49 +129,38 @@ def set_panel_password(telegram_user_id: int, password: str, ip: str = "") -> Tu
     return True, ""
 
 
-def configure_golden_key(telegram_user_id: int, golden_key: str, ip: str = "") -> Tuple[bool, str]:
-    """Шифрует и сохраняет Golden Key в SecretManager."""
+async def configure_golden_key(telegram_user_id: int, golden_key: str, ip: str = "") -> Tuple[bool, str, dict]:
+    """
+    Шифрует, сохраняет и авторизует Golden Key через единый AccountLifecycleManager.
+    Синхронно валидирует ключ на FunPay и возвращает реальный статус аккаунта.
+    """
     owner_id_str = get_state("owner_telegram_id")
     if not owner_id_str or int(owner_id_str) != telegram_user_id:
-        return False, "Только владелец может настраивать Golden Key"
+        return False, "Только владелец может настраивать Golden Key", {}
 
     clean_key = golden_key.strip()
     if len(clean_key) != 32:
-        return False, "Golden Key должен состоять ровно из 32 символов"
+        from carnaval.services.account_lifecycle import lifecycle_manager, ErrorCode
+        lifecycle_manager._set_error(
+            ErrorCode.INVALID_KEY_FORMAT,
+            f"Golden Key должен состоять ровно из 32 символов (получено {len(clean_key)})"
+        )
+        return False, "Golden Key должен состоять ровно из 32 символов", lifecycle_manager.get_status()
 
-    SecretManager.set_secret("golden_key", clean_key)
+    from carnaval.services.account_lifecycle import lifecycle_manager
+    res = await lifecycle_manager.connect_account(clean_key)
+    account_status = res.get("status", {})
 
-    # Синхронизация с живым Cardinal (если Cardinal запущен)
-    try:
-        cardinal = get_cardinal()
-        if cardinal and hasattr(cardinal, "account") and cardinal.account:
-            cardinal.account.golden_key = clean_key
-            if hasattr(cardinal, "MAIN_CFG") and "FunPay" in cardinal.MAIN_CFG:
-                cardinal.MAIN_CFG["FunPay"]["golden_key"] = clean_key
-                cardinal.save_config(cardinal.MAIN_CFG, "configs/_main.cfg")
-    except Exception as e:
-        logger.debug(f"Carnaval.Setup: Cardinal не запущен или не обновлен: {e}")
+    if not res.get("ok"):
+        err_msg = (
+            account_status.get("error", {}).get("message")
+            if account_status.get("error")
+            else "Ошибка проверки FunPay Golden Key"
+        )
+        return False, err_msg or "Ошибка подключения к FunPay", account_status
 
-    # Запускаем переподключение FunPay в фоновом потоке
-    try:
-        import threading
-        cardinal = get_cardinal()
-        if cardinal and hasattr(cardinal, 'reinit_account'):
-            def _reinit():
-                try:
-                    success = cardinal.reinit_account()
-                    if success:
-                        logger.info("Carnaval.Setup: FunPay аккаунт успешно активирован через Mini App")
-                    else:
-                        logger.warning("Carnaval.Setup: reinit_account вернул False (ключ невалиден или сеть недоступна)")
-                except Exception as e:
-                    logger.error(f"Carnaval.Setup: ошибка reinit_account: {e}")
-            threading.Thread(target=_reinit, daemon=True, name="Carnaval-Reinit").start()
-    except Exception as e:
-        logger.debug(f"Carnaval.Setup: не удалось запустить reinit_account: {e}")
-
-    log_audit("golden_key_configured", telegram_user_id, ip, "Golden Key успешно зашифрован и сохранен")
-    return True, ""
+    log_audit("golden_key_configured", telegram_user_id, ip, "Golden Key успешно зашифрован и верифицирован")
+    return True, "", account_status
 
 
 def finalize_setup(telegram_user_id: int, ip: str = "") -> Tuple[bool, str]:

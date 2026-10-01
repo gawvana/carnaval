@@ -32,10 +32,100 @@ from locales.localizer import Localizer
 import carnaval.emoji
 from carnaval import bot_glue
 
+import atexit
+
 logger = logging.getLogger("TGBot")
 localizer = Localizer()
 _ = localizer.translate
 telebot.apihelper.ENABLE_MIDDLEWARE = True
+
+TG_LOCK_FILE = os.path.join("storage", "cache", "tg_bot.lock")
+
+
+def _get_lock_pid() -> int | None:
+    try:
+        if os.path.exists(TG_LOCK_FILE):
+            with open(TG_LOCK_FILE, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            if content.isdigit():
+                return int(content)
+    except Exception:
+        pass
+    return None
+
+
+def acquire_tg_bot_lock() -> bool:
+    """Записывает PID текущего процесса в storage/cache/tg_bot.lock."""
+    try:
+        os.makedirs(os.path.dirname(TG_LOCK_FILE), exist_ok=True)
+        old_pid = _get_lock_pid()
+        if old_pid and old_pid != os.getpid() and psutil.pid_exists(old_pid):
+            logger.warning(
+                f"Telegram Bot lock: обнаружен уже запущенный процесс бота (PID {old_pid}). "
+                f"Текущий процесс (PID {os.getpid()}) записывает свой lock."
+            )
+        with open(TG_LOCK_FILE, "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
+        return True
+    except Exception as e:
+        logger.warning(f"Не удалось записать lock-файл {TG_LOCK_FILE}: {e}")
+        return False
+
+
+def release_tg_bot_lock() -> None:
+    """Удаляет lock-файл при завершении процесса."""
+    try:
+        if os.path.exists(TG_LOCK_FILE):
+            with open(TG_LOCK_FILE, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            if content == str(os.getpid()):
+                os.remove(TG_LOCK_FILE)
+    except Exception:
+        pass
+
+
+atexit.register(release_tg_bot_lock)
+
+
+class TelegramPollingExceptionHandler(telebot.ExceptionHandler):
+    """
+    Обработчик ошибок polling'а TeleBot.
+    При 409 Conflict предотвращает спам логов, логирует предупреждение и делает экспоненциальный backoff.
+    При длительном конфликте корректно завершает цикл polling'а.
+    """
+
+    def __init__(self):
+        self.last_409_warning = 0.0
+        self.consecutive_409 = 0
+
+    def handle(self, exception: Exception) -> bool:
+        if isinstance(exception, ApiTelegramException) and getattr(exception, "error_code", None) == 409:
+            self.consecutive_409 += 1
+            now = time.time()
+            backoff = min(30, 5 * (2 ** min(self.consecutive_409 - 1, 3)))
+            other_pid = _get_lock_pid()
+            if now - self.last_409_warning > 10.0:
+                self.last_409_warning = now
+                if other_pid and other_pid != os.getpid() and psutil.pid_exists(other_pid):
+                    logger.warning(
+                        f"Telegram Bot 409 Conflict: обнаружен другой активный экземпляр бота (PID {other_pid}). "
+                        f"Применяется задержка {backoff} сек (попытка #{self.consecutive_409})..."
+                    )
+                else:
+                    logger.warning(
+                        f"Telegram Bot 409 Conflict: параллельный polling getUpdates от другого процесса. "
+                        f"Применяется задержка {backoff} сек (попытка #{self.consecutive_409})..."
+                    )
+            time.sleep(backoff)
+            if self.consecutive_409 > 5 and other_pid and other_pid != os.getpid() and psutil.pid_exists(other_pid):
+                logger.error(
+                    f"Telegram Bot: активный процесс PID {other_pid} удерживает polling. "
+                    "Текущий дублирующий экземпляр останавливает polling."
+                )
+                return False
+            return True
+        self.consecutive_409 = 0
+        return False
 
 
 class TGBot:
@@ -53,6 +143,7 @@ class TGBot:
             cardinal.MAIN_CFG["Telegram"]["token"] = token
         self.bot = telebot.TeleBot(token, parse_mode="HTML",
                                    allow_sending_without_reply=True, num_threads=5)
+        self.bot.exception_handler = TelegramPollingExceptionHandler()
 
         self.file_handlers = {}  # хэндлеры, привязанные к получению файла.
         self.attempts = {}  # {user_id: attempts} - попытки авторизации в Telegram ПУ.
@@ -1254,18 +1345,51 @@ class TGBot:
 
     def run(self):
         """
-        Запускает поллинг.
+        Запускает поллинг Telegram бота с защитой от одновременного запуска и обработкой 409 Conflict.
         """
+        acquire_tg_bot_lock()
         self.send_notification(_("bot_started"), notification_type=utils.NotificationTypes.bot_start)
         k_err = 0
+        last_409_warning = 0.0
         while True:
             try:
                 bot_user = self.bot.get_me() if not getattr(self.bot, "user", None) else self.bot.user
                 username = getattr(bot_user, "username", "bot")
                 logger.info(_("log_tg_started", username))
                 self.bot.infinity_polling(logger_level=logging.DEBUG)
-            except:
+            except ApiTelegramException as e:
+                if getattr(e, "error_code", None) == 409:
+                    now = time.time()
+                    if now - last_409_warning > 10.0:
+                        last_409_warning = now
+                        other_pid = _get_lock_pid()
+                        if other_pid and other_pid != os.getpid() and psutil.pid_exists(other_pid):
+                            logger.warning(
+                                f"Telegram Bot 409 Conflict: обнаружен другой запущенный экземпляр бота (PID {other_pid}). "
+                                f"Ожидание 5 сек перед повторной попыткой..."
+                            )
+                        else:
+                            logger.warning(
+                                "Telegram Bot 409 Conflict: конфликт сессий getUpdates. "
+                                "Ожидание 5 сек перед повторной попыткой..."
+                            )
+                    time.sleep(5)
+                else:
+                    k_err += 1
+                    logger.error(_("log_tg_update_error", k_err))
+                    logger.debug("TRACEBACK", exc_info=True)
+                    time.sleep(10)
+            except Exception:
                 k_err += 1
                 logger.error(_("log_tg_update_error", k_err))
                 logger.debug("TRACEBACK", exc_info=True)
                 time.sleep(10)
+
+    def stop(self):
+        """Корректная остановка бота, прекращение polling и освобождение lock."""
+        try:
+            if hasattr(self, "bot") and self.bot:
+                self.bot.stop_polling()
+        except Exception:
+            pass
+        release_tg_bot_lock()

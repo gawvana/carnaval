@@ -260,6 +260,22 @@ def unlock_panel_session(session_token: str) -> bool:
         return cur.rowcount > 0
 
 
+def lock_panel_session(session_token: str) -> bool:
+    """Блокирует чувствительные разделы панели для текущей сессии (Lock Panel)."""
+    token_hash = _hash_session_token(session_token)
+
+    with transaction() as conn:
+        cur = conn.execute(
+            """
+            UPDATE sessions
+            SET panel_unlocked = 0, unlocked_at = NULL
+            WHERE session_id_hash = ? AND revoked_at IS NULL
+            """,
+            (token_hash,)
+        )
+        return cur.rowcount > 0
+
+
 def revoke_session(session_token: str) -> bool:
     """Отзывает текущую сессию (Logout)."""
     token_hash = _hash_session_token(session_token)

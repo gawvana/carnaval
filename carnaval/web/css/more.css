@@ -204,6 +204,24 @@
   flex-shrink: 0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
+.more-cat-icon-box svg,
+.more-glance-icon svg {
+  width: 22px;
+  height: 22px;
+}
+.more-pill-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.more-menu-arrow svg {
+  width: 18px;
+  height: 18px;
+}
+.more-btn-sm svg,
+.more-btn-save svg {
+  width: 16px;
+  height: 16px;
+}
 
 .more-cat-icon-notif   { background: linear-gradient(135deg, #FF9500, #FF6A00); color: #fff; }
 .more-cat-icon-msg     { background: linear-gradient(135deg, #30B0C7, #007AFF); color: #fff; }
@@ -580,4 +598,300 @@
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* ── Profile Page Styles (Mattering v2 + Apple Glass) ── */
+.profile-page-container {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 12px 16px 120px;
+  box-sizing: border-box;
+  animation: fadeIn 0.25s ease-out;
+}
+
+@media (max-width: 430px) {
+  .profile-page-container {
+    padding: 8px 12px 110px;
+  }
+}
+
+.profile-header-sticky {
+  position: sticky;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  z-index: 5;
+  height: 54px;
+  border-radius: var(--rf, 999px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  margin-bottom: 18px;
+  border: 1px solid var(--edge);
+  box-shadow: 0 4px 16px var(--sh, rgba(0,0,0,0.06));
+}
+
+.profile-header-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--on);
+  margin: 0;
+}
+
+.profile-section-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 16px 0 8px 6px;
+}
+
+.profile-card {
+  border-radius: var(--r3, 22px);
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  padding: 18px 20px;
+  margin-bottom: 14px;
+  box-shadow: 0 4px 20px var(--sh, rgba(0, 0, 0, 0.05));
+}
+
+.profile-user-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.profile-avatar-wrap {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+}
+
+.profile-avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--primary);
+  box-shadow: 0 4px 14px rgba(79, 93, 255, 0.25);
+}
+
+.profile-avatar-monogram {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), var(--p));
+  color: var(--on-primary);
+  display: grid;
+  place-items: center;
+  font-size: 26px;
+  font-weight: 800;
+  box-shadow: 0 4px 14px rgba(79, 93, 255, 0.3);
+}
+
+.profile-avatar-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--ok);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--surface, #1e1f26);
+}
+
+.profile-avatar-badge svg {
+  width: 13px;
+  height: 13px;
+}
+
+.profile-user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.profile-user-name {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--on);
+  line-height: 1.2;
+}
+
+.profile-user-handle {
+  font-size: 14px;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.profile-badge-auth {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ok);
+  margin-top: 4px;
+}
+
+.profile-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.profile-status-dot.green {
+  background: var(--ok);
+}
+
+.profile-grid-kv {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.profile-kv-cell {
+  background: var(--track);
+  border-radius: var(--r2, 14px);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-kv-k {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.profile-kv-v {
+  font-size: 14px;
+  color: var(--on);
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.profile-funpay-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.profile-funpay-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #007AFF, #5856D6);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.25);
+}
+
+.profile-funpay-icon-box svg {
+  width: 24px;
+  height: 24px;
+}
+
+.profile-funpay-username {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--on);
+}
+
+.profile-pill-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: var(--rf, 999px);
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--track);
+  color: var(--muted);
+}
+
+.profile-pill-badge.badge-ok {
+  background: var(--ok-c);
+  color: var(--on-ok-c);
+}
+
+.profile-pill-badge.badge-warn {
+  background: var(--warn-c);
+  color: var(--on-warn-c);
+}
+
+.profile-balance-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.profile-balance-cell {
+  border-radius: var(--r2, 16px);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.profile-balance-cell.primary {
+  background: linear-gradient(135deg, rgba(79, 93, 255, 0.12), rgba(79, 93, 255, 0.04));
+  border: 1px solid rgba(79, 93, 255, 0.2);
+}
+
+.profile-balance-cell.secondary {
+  background: var(--track);
+  border: 1px solid var(--outline);
+}
+
+.profile-balance-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.profile-balance-val {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--on);
+  letter-spacing: -0.02em;
+}
+
+.profile-balance-sub {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.profile-subtext {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.profile-sessions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.profile-session-row {
+  background: var(--track);
+  border-radius: var(--r2, 12px);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }

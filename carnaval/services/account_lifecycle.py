@@ -132,12 +132,12 @@ class AccountLifecycleManager:
     def get_status(self) -> dict[str, Any]:
         """Возвращает актуальный статус для API и фронтенда."""
         with self._thread_lock:
-            # Синхронизация состояния при старте
+            # Синхронизация состояния при старте (только когда Cardinal доступен)
             if not self._initial_check_done:
-                self._initial_check_done = True
-                if self.state == AccountState.NO_KEY:
-                    cardinal = _safe_get_cardinal()
-                    acc = getattr(cardinal, "account", None) if cardinal else None
+                cardinal = _safe_get_cardinal()
+                if cardinal is not None:
+                    self._initial_check_done = True
+                    acc = getattr(cardinal, "account", None)
                     if acc and getattr(acc, "is_initiated", False):
                         self.state = AccountState.READY
                         curr = getattr(acc, "currency", None)
@@ -213,6 +213,9 @@ class AccountLifecycleManager:
             except asyncio.TimeoutError:
                 self._set_error(ErrorCode.TIMEOUT, "Таймаут соединения с funpay.com (сервер не ответил за 20 сек)")
                 return {"ok": False, "status": self.get_status()}
+            except asyncio.CancelledError:
+                self._set_error(ErrorCode.TIMEOUT, "Запрос авторизации был отменен")
+                raise
             except Exception as e:
                 if self.state != AccountState.FAILED:
                     self._set_error(ErrorCode.NETWORK_ERROR, f"Ошибка при проверке ключа FunPay: {e}")
@@ -277,7 +280,11 @@ class AccountLifecycleManager:
                 self.last_error = None
                 self._broadcast_state()
                 return {"ok": True, "status": self.get_status()}
+            except asyncio.CancelledError:
+                self._set_error(ErrorCode.TIMEOUT, "Запрос переподключения был отменен")
+                raise
             except Exception as e:
+                self._set_error(ErrorCode.NETWORK_ERROR, f"Ошибка переподключения FunPay: {e}")
                 return {"ok": False, "error": str(e), "status": self.get_status()}
 
     async def disconnect_account(self) -> dict[str, Any]:
@@ -301,6 +308,12 @@ class AccountLifecycleManager:
             if cardinal:
                 cardinal.running = False
                 cardinal.runner = None
+                if hasattr(cardinal, "MAIN_CFG") and "FunPay" in cardinal.MAIN_CFG:
+                    cardinal.MAIN_CFG["FunPay"]["golden_key"] = ""
+                    try:
+                        cardinal.save_config(cardinal.MAIN_CFG, "configs/_main.cfg")
+                    except Exception:
+                        pass
 
             self.profile = None
             self.last_error = None
@@ -310,57 +323,116 @@ class AccountLifecycleManager:
             return {"ok": True, "status": self.get_status()}
 
     async def change_golden_key(self, new_key: str, timeout: float = 20.0) -> dict[str, Any]:
-        """Атомарная ротация Golden Key."""
-        await self.disconnect_account()
-        return await self.connect_account(new_key, timeout=timeout)
+        """Атомарная ротация Golden Key под единым мьютексом."""
+        clean_key = new_key.strip()
+        if len(clean_key) != 32:
+            self._set_error(ErrorCode.INVALID_KEY_FORMAT, f"Golden Key должен состоять ровно из 32 символов (получено {len(clean_key)})")
+            return {"ok": False, "status": self.get_status()}
+
+        async with self._lock:
+            # 1. Отключаем старый аккаунт
+            self.state = AccountState.DISCONNECTING
+            self._broadcast_state()
+            await asyncio.to_thread(self._sync_stop_runner)
+
+            # 2. Подключаем новый аккаунт
+            self.state = AccountState.KEY_SAVED
+            self.last_error = None
+            SecretManager.set_secret("golden_key", clean_key)
+            self._broadcast_state()
+
+            self.state = AccountState.AUTHENTICATING
+            self._broadcast_state()
+            try:
+                profile_detail = await asyncio.wait_for(
+                    asyncio.to_thread(self._sync_authenticate, clean_key),
+                    timeout=timeout
+                )
+            except asyncio.TimeoutError:
+                self._set_error(ErrorCode.TIMEOUT, "Таймаут соединения с funpay.com (сервер не ответил за 20 сек)")
+                return {"ok": False, "status": self.get_status()}
+            except asyncio.CancelledError:
+                self._set_error(ErrorCode.TIMEOUT, "Запрос авторизации был отменен")
+                raise
+            except Exception as e:
+                if self.state != AccountState.FAILED:
+                    self._set_error(ErrorCode.NETWORK_ERROR, f"Ошибка при проверке нового ключа FunPay: {e}")
+                return {"ok": False, "status": self.get_status()}
+
+            self.state = AccountState.CONNECTED
+            self.profile = profile_detail
+            self._broadcast_state()
+
+            self.state = AccountState.RUNNER_STARTING
+            self._broadcast_state()
+            try:
+                await asyncio.to_thread(self._sync_start_runner)
+                self.state = AccountState.READY
+                self._broadcast_state()
+            except Exception as e:
+                logger.error(f"Carnaval.Lifecycle: ошибка запуска раннера при ротации ключа: {e}")
+                self._set_error(ErrorCode.RUNNER_ERROR, f"Новый аккаунт авторизован, но раннер завершился ошибкой: {e}")
+                return {"ok": False, "status": self.get_status()}
+
+            logger.info(f"Carnaval.Lifecycle: Ключ успешно обновлен для аккаунта {self.profile.username}")
+            return {"ok": True, "status": self.get_status()}
 
     # ─────────────────────────────────────────────────────────────────────────
     # Синхронные методы (выполняются в отдельном пуле потоков через to_thread)
     # ─────────────────────────────────────────────────────────────────────────
 
     def _sync_authenticate(self, clean_key: str) -> AccountProfileDetail:
+        cardinal = _safe_get_cardinal()
         with self._thread_lock:
-            try:
-                cardinal = _safe_get_cardinal()
-                account = getattr(cardinal, "account", None)
-                if not account:
-                    account = FunPayAPI.Account(clean_key)
-                    if cardinal:
-                        cardinal.account = account
-                else:
-                    account.golden_key = clean_key
-                    account.phpsessid = None
+            account = getattr(cardinal, "account", None) if cardinal else None
+            if not account:
+                account = FunPayAPI.Account(clean_key)
+                if cardinal:
+                    cardinal.account = account
+            else:
+                account.golden_key = clean_key
+                account.phpsessid = None
 
-                logger.info("Carnaval.Lifecycle: обращение к funpay.com через Account.get(update_phpsessid=True)...")
-                account.get(update_phpsessid=True)
-            except fp_exceptions.UnauthorizedError as e:
-                # Проверка на Cloudflare
-                text = ""
-                if hasattr(e, "response") and e.response is not None:
-                    text = getattr(e.response, "text", "")
-                if "cloudflare" in text.lower() or "challenge" in text.lower() or "turnstile" in text.lower():
-                    self._set_error(
-                        ErrorCode.CLOUDFLARE_BLOCKED,
-                        "FunPay отклонил запрос защитой Cloudflare (403). Требуется прокси.",
-                        http_status=403,
-                        raw_details=text[:300]
-                    )
-                else:
-                    self._set_error(
-                        ErrorCode.UNAUTHORIZED,
-                        "Неверный или устаревший Golden Key. Проверьте актуальность куки golden_key.",
-                        http_status=401
-                    )
-                raise
-            except requests.exceptions.ProxyError as e:
-                self._set_error(ErrorCode.PROXY_ERROR, f"Ошибка подключения к прокси-серверу: {e}")
-                raise
-            except requests.exceptions.Timeout as e:
-                self._set_error(ErrorCode.TIMEOUT, "Сервер FunPay не ответил вовремя (превышен таймаут)")
-                raise
-            except Exception as e:
-                self._set_error(ErrorCode.NETWORK_ERROR, f"Сетевая ошибка при проверке FunPay: {e}")
-                raise
+        logger.info("Carnaval.Lifecycle: обращение к funpay.com через Account.get(update_phpsessid=True)...")
+        try:
+            # Сетевой вызов БЕЗ блокировки _thread_lock, предотвращая зависание asyncio event loop
+            account.get(update_phpsessid=True)
+        except fp_exceptions.UnauthorizedError as e:
+            # Проверка на Cloudflare
+            text = ""
+            if hasattr(e, "response") and e.response is not None:
+                text = getattr(e.response, "text", "")
+            if "cloudflare" in text.lower() or "challenge" in text.lower() or "turnstile" in text.lower():
+                self._set_error(
+                    ErrorCode.CLOUDFLARE_BLOCKED,
+                    "FunPay отклонил запрос защитой Cloudflare (403). Требуется прокси.",
+                    http_status=403,
+                    raw_details=text[:300]
+                )
+            else:
+                self._set_error(
+                    ErrorCode.UNAUTHORIZED,
+                    "Неверный или устаревший Golden Key. Проверьте актуальность куки golden_key.",
+                    http_status=401
+                )
+            raise
+        except requests.exceptions.ProxyError as e:
+            self._set_error(ErrorCode.PROXY_ERROR, f"Ошибка подключения к прокси-серверу: {e}")
+            raise
+        except requests.exceptions.Timeout as e:
+            self._set_error(ErrorCode.TIMEOUT, "Сервер FunPay не ответил вовремя (превышен таймаут)")
+            raise
+        except Exception as e:
+            self._set_error(ErrorCode.NETWORK_ERROR, f"Сетевая ошибка при проверке FunPay: {e}")
+            raise
+
+        with self._thread_lock:
+            if cardinal and hasattr(cardinal, "MAIN_CFG") and "FunPay" in cardinal.MAIN_CFG:
+                cardinal.MAIN_CFG["FunPay"]["golden_key"] = clean_key
+                try:
+                    cardinal.save_config(cardinal.MAIN_CFG, "configs/_main.cfg")
+                except Exception:
+                    pass
 
             # Безопасное чтение баланса (fallback)
             total_bal = getattr(account, "total_balance", 0) or 0
