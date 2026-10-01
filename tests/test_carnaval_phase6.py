@@ -181,32 +181,41 @@ def test_meta_endpoint():
     assert "cors_origins" not in data, "cors_origins must not be exposed in /api/meta"
 
 
-def test_set_allowed_origins_logic():
-    """set_allowed_origins парсит строку корректно для wildcard и конкретных origins."""
-    from carnaval.server import set_allowed_origins, get_allowed_origins
+def test_set_allowed_origins_logic(monkeypatch):
+    """set_allowed_origins парсит строку корректно: строгий allowlist по умолчанию, wildcard только с CARNAVAL_ALLOW_ANY_ORIGIN=1."""
+    from carnaval.server import set_allowed_origins, get_allowed_origins, DEFAULT_ALLOWED_ORIGINS
 
-    # Wildcard
+    # Без CARNAVAL_ALLOW_ANY_ORIGIN=1 wildcard и пустая строка возвращают строгий allowlist
+    monkeypatch.delenv("CARNAVAL_ALLOW_ANY_ORIGIN", raising=False)
+    set_allowed_origins("*")
+    assert get_allowed_origins() == DEFAULT_ALLOWED_ORIGINS
+
+    set_allowed_origins("")
+    assert get_allowed_origins() == DEFAULT_ALLOWED_ORIGINS
+
+    # С флагом CARNAVAL_ALLOW_ANY_ORIGIN=1 wildcard разрешён
+    monkeypatch.setenv("CARNAVAL_ALLOW_ANY_ORIGIN", "1")
     set_allowed_origins("*")
     assert get_allowed_origins() == ["*"]
 
-    # Пустая строка — как wildcard
     set_allowed_origins("")
     assert get_allowed_origins() == ["*"]
+    monkeypatch.delenv("CARNAVAL_ALLOW_ANY_ORIGIN", raising=False)
 
-    # Конкретный origin
+    # Конкретный origin добавляется к строгому списку
     set_allowed_origins("https://carnaval.vercel.app")
     result = get_allowed_origins()
-    assert result == ["https://carnaval.vercel.app"]
+    assert "https://carnaval.vercel.app" in result
+    assert "https://web.telegram.org" in result
 
     # Несколько через запятую
     set_allowed_origins("https://a.vercel.app, https://b.vercel.app")
     result = get_allowed_origins()
-    assert len(result) == 2
     assert "https://a.vercel.app" in result
     assert "https://b.vercel.app" in result
 
-    # Сбрасываем в wildcard после теста
-    set_allowed_origins("*")
+    # Сбрасываем в дефолтный allowlist после теста
+    set_allowed_origins()
 
 
 def test_config_js_and_vercel_files_exist():

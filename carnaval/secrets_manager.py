@@ -26,6 +26,36 @@ logger = logging.getLogger("Carnaval.Secrets")
 _master_key: Optional[bytes] = None
 
 
+def reset_master_key() -> None:
+    """Сбрасывает кешированный в памяти мастер-ключ (для тестов и изоляции)."""
+    global _master_key
+    _master_key = None
+
+
+def _ensure_secrets_table() -> None:
+    """
+    Гарантирует, что carnaval.db.init_db() выполнен и таблица secrets существует.
+    Безопасно для конкурентного вызова и чистых запусков до запуска FastAPI lifespan.
+    """
+    init_persistent_dirs()
+    from carnaval.db import init_db, get_db_connection
+    try:
+        conn = get_db_connection()
+        try:
+            cur = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='secrets'")
+            exists = cur.fetchone() is not None
+        finally:
+            conn.close()
+        if not exists:
+            init_db()
+    except Exception as e:
+        logger.warning(f"Carnaval.Secrets: проверка таблицы secrets: {e}. Запуск init_db()...")
+        try:
+            init_db()
+        except Exception as e2:
+            logger.error(f"Carnaval.Secrets: не удалось инициализировать БД: {e2}")
+
+
 def _get_or_create_master_key() -> bytes:
     """
     Загружает существующий мастер-ключ или безопасно генерирует новый при первом запуске.
@@ -36,6 +66,7 @@ def _get_or_create_master_key() -> bytes:
         return _master_key
 
     init_persistent_dirs()
+    _ensure_secrets_table()
 
     if os.path.exists(MASTER_KEY_PATH):
         with open(MASTER_KEY_PATH, "rb") as f:
@@ -74,31 +105,61 @@ class SecretManager:
         if value is None:
             raise ValueError("Secret value cannot be None")
 
+        _ensure_secrets_table()
         key = _get_or_create_master_key()
         aesgcm = AESGCM(key)
         nonce = os.urandom(12)
         ciphertext = aesgcm.encrypt(nonce, value.encode("utf-8"), None)
         now = int(time.time())
 
-        with transaction() as conn:
-            conn.execute(
-                """
-                INSERT INTO secrets (name, ciphertext, nonce, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(name) DO UPDATE SET
-                    ciphertext = excluded.ciphertext,
-                    nonce = excluded.nonce,
-                    updated_at = excluded.updated_at
-                """,
-                (name, ciphertext, nonce, now, now)
-            )
+        try:
+            with transaction() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO secrets (name, ciphertext, nonce, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(name) DO UPDATE SET
+                        ciphertext = excluded.ciphertext,
+                        nonce = excluded.nonce,
+                        updated_at = excluded.updated_at
+                    """,
+                    (name, ciphertext, nonce, now, now)
+                )
+        except Exception as e:
+            if "no such table: secrets" in str(e).lower():
+                from carnaval.db import init_db
+                init_db()
+                with transaction() as conn:
+                    conn.execute(
+                        """
+                        INSERT INTO secrets (name, ciphertext, nonce, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(name) DO UPDATE SET
+                            ciphertext = excluded.ciphertext,
+                            nonce = excluded.nonce,
+                            updated_at = excluded.updated_at
+                        """,
+                        (name, ciphertext, nonce, now, now)
+                    )
+            else:
+                raise
 
     @staticmethod
     def get_secret(name: str) -> Optional[str]:
         """Расшифровывает и возвращает секрет только для внутренних нужд backend."""
+        _ensure_secrets_table()
         conn = get_db_connection()
         try:
-            row = conn.execute("SELECT ciphertext, nonce FROM secrets WHERE name = ?", (name,)).fetchone()
+            try:
+                row = conn.execute("SELECT ciphertext, nonce FROM secrets WHERE name = ?", (name,)).fetchone()
+            except Exception as e:
+                if "no such table: secrets" in str(e).lower():
+                    from carnaval.db import init_db
+                    init_db()
+                    row = conn.execute("SELECT ciphertext, nonce FROM secrets WHERE name = ?", (name,)).fetchone()
+                else:
+                    raise
+
             if not row:
                 return None
             key = _get_or_create_master_key()
@@ -114,16 +175,29 @@ class SecretManager:
     @staticmethod
     def has_secret(name: str) -> bool:
         """Проверяет, настроен ли данный секрет (без расшифровки)."""
+        _ensure_secrets_table()
         conn = get_db_connection()
         try:
-            row = conn.execute("SELECT 1 FROM secrets WHERE name = ?", (name,)).fetchone()
+            try:
+                row = conn.execute("SELECT 1 FROM secrets WHERE name = ?", (name,)).fetchone()
+            except Exception as e:
+                if "no such table: secrets" in str(e).lower():
+                    from carnaval.db import init_db
+                    init_db()
+                    row = conn.execute("SELECT 1 FROM secrets WHERE name = ?", (name,)).fetchone()
+                else:
+                    raise
             return row is not None
+        except Exception as e:
+            logger.error(f"Carnaval.Secrets: ошибка проверки секрета '{name}': {e}")
+            return False
         finally:
             conn.close()
 
     @staticmethod
     def delete_secret(name: str) -> bool:
         """Безопасно удаляет секрет из базы данных."""
+        _ensure_secrets_table()
         with transaction() as conn:
             cur = conn.execute("DELETE FROM secrets WHERE name = ?", (name,))
             return cur.rowcount > 0
@@ -164,6 +238,7 @@ class SecretManager:
     @staticmethod
     def list_configured_secrets() -> list[str]:
         """Возвращает список имен настроенных секретов (без значений)."""
+        _ensure_secrets_table()
         conn = get_db_connection()
         try:
             rows = conn.execute("SELECT name FROM secrets ORDER BY name ASC").fetchall()

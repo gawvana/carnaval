@@ -20,6 +20,8 @@ from FunPayAPI.common import exceptions as fp_exceptions
 @pytest.fixture
 def lifecycle_mgr():
     """Тестовый экземпляр менеджера с чистым состоянием."""
+    from carnaval import deps
+    deps.set_cardinal(None)
     mgr = AccountLifecycleManager()
     mgr._init_state()
     return mgr

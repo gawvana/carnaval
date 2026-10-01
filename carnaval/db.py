@@ -114,14 +114,12 @@ def init_db() -> None:
             );
             """)
 
-            # Инициализация дефолтного состояния системы если не существует
-            cur = conn.execute("SELECT value FROM system_state WHERE key = 'state'")
-            if not cur.fetchone():
-                now = int(time.time())
-                conn.execute(
-                    "INSERT INTO system_state (key, value, updated_at) VALUES ('state', 'UNINITIALIZED', ?)",
-                    (now,)
-                )
+            # Инициализация дефолтного состояния системы если не существует (100% идемпотентно)
+            now = int(time.time())
+            conn.execute(
+                "INSERT OR IGNORE INTO system_state (key, value, updated_at) VALUES ('state', 'UNINITIALIZED', ?)",
+                (now,)
+            )
         logger.info("Carnaval.DB: схема базы данных успешно проверена/инициализирована")
     finally:
         conn.close()

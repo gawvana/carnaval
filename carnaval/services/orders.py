@@ -65,11 +65,25 @@ def _order_detail_to_dict(o: Any) -> dict[str, Any]:
     }
 
 
-async def get_orders(status: Optional[str] = None, start_from: Optional[str] = None, limit: int = 25) -> dict[str, Any]:
-    """
-    Получить список заказов продавца.
-    status: 'paid', 'closed', 'refunded' или None (все)
-    """
+class OrdersServiceError(Exception):
+    """Базовое исключение сервиса заказов."""
+    def __init__(self, error_code: str, message: str):
+        super().__init__(message)
+        self.error_code = error_code
+        self.message = message
+
+
+class FunPayAccountNotInitializedError(OrdersServiceError):
+    def __init__(self, message: str = "Аккаунт FunPay не инициализирован или не подключен"):
+        super().__init__("FUNPAY_ACCOUNT_NOT_INITIALIZED", message)
+
+
+class FunPayNetworkError(OrdersServiceError):
+    def __init__(self, message: str = "Ошибка сети при обращении к FunPay"):
+        super().__init__("NETWORK_ERROR", message)
+
+
+async def _ensure_account_initiated():
     cardinal = get_cardinal()
     acc = cardinal.account
     if not acc or not getattr(acc, "is_initiated", False):
@@ -80,8 +94,18 @@ async def get_orders(status: Optional[str] = None, start_from: Optional[str] = N
                 await lifecycle_manager.reconnect_account()
             except Exception:
                 pass
+        acc = cardinal.account
         if not acc or not getattr(acc, "is_initiated", False):
-            return {"orders": [], "next_order_id": None, "funpay_connected": False}
+            raise FunPayAccountNotInitializedError()
+    return acc
+
+
+async def get_orders(status: Optional[str] = None, start_from: Optional[str] = None, limit: int = 25) -> dict[str, Any]:
+    """
+    Получить список заказов продавца.
+    status: 'paid', 'closed', 'refunded' или None (все)
+    """
+    acc = await _ensure_account_initiated()
 
     include_paid = True
     include_closed = True
@@ -109,20 +133,20 @@ async def get_orders(status: Optional[str] = None, start_from: Optional[str] = N
     try:
         next_order_id, orders = await asyncio.to_thread(_fetch)
         return {
-            "orders": [_order_to_dict(o) for o in orders],
+            "ok": True,
+            "orders": [_order_to_dict(o) for o in (orders or [])],
             "next_order_id": next_order_id,
             "funpay_connected": True,
         }
     except Exception as e:
-        return {"orders": [], "next_order_id": None, "funpay_connected": False, "error": str(e)}
+        if isinstance(e, OrdersServiceError):
+            raise
+        raise FunPayNetworkError(f"Ошибка при получении заказов: {e}") from e
 
 
 async def get_order(order_id: str) -> Optional[dict[str, Any]]:
     """Получить детальную информацию о заказе."""
-    cardinal = get_cardinal()
-    acc = cardinal.account
-    if not acc or not getattr(acc, "is_initiated", False):
-        return None
+    acc = await _ensure_account_initiated()
 
     def _fetch():
         return acc.get_order(order_id)
@@ -132,8 +156,10 @@ async def get_order(order_id: str) -> Optional[dict[str, Any]]:
         if not order:
             return None
         return _order_detail_to_dict(order)
-    except Exception:
-        return None
+    except Exception as e:
+        if isinstance(e, OrdersServiceError):
+            raise
+        raise FunPayNetworkError(f"Ошибка при получении заказа #{order_id}: {e}") from e
 
 
 async def refund_order(order_id: str, confirm: bool = False) -> tuple[bool, str]:

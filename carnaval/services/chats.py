@@ -37,8 +37,25 @@ def _message_to_dict(m: Any) -> dict[str, Any]:
     }
 
 
-async def get_chats(update: bool = False) -> list[dict[str, Any]]:
-    """Получить список последних переписок продавца."""
+class ChatsServiceError(Exception):
+    """Базовое исключение сервиса чатов."""
+    def __init__(self, error_code: str, message: str):
+        super().__init__(message)
+        self.error_code = error_code
+        self.message = message
+
+
+class FunPayAccountNotInitializedError(ChatsServiceError):
+    def __init__(self, message: str = "Аккаунт FunPay не инициализирован или не подключен"):
+        super().__init__("FUNPAY_ACCOUNT_NOT_INITIALIZED", message)
+
+
+class FunPayNetworkError(ChatsServiceError):
+    def __init__(self, message: str = "Ошибка сети при обращении к FunPay"):
+        super().__init__("NETWORK_ERROR", message)
+
+
+async def _ensure_account_initiated():
     cardinal = get_cardinal()
     acc = cardinal.account
     if not acc or not getattr(acc, "is_initiated", False):
@@ -49,35 +66,43 @@ async def get_chats(update: bool = False) -> list[dict[str, Any]]:
                 await lifecycle_manager.reconnect_account()
             except Exception:
                 pass
+        acc = cardinal.account
         if not acc or not getattr(acc, "is_initiated", False):
-            return []
+            raise FunPayAccountNotInitializedError()
+    return acc
+
+
+async def get_chats(update: bool = False) -> list[dict[str, Any]]:
+    """Получить список последних переписок продавца."""
+    acc = await _ensure_account_initiated()
 
     def _fetch():
-        try:
-            chats_dict = acc.get_chats(update=update)
-            return list(chats_dict.values()) if isinstance(chats_dict, dict) else list(chats_dict)
-        except Exception:
-            return []
+        chats_dict = acc.get_chats(update=update)
+        return list(chats_dict.values()) if isinstance(chats_dict, dict) else list(chats_dict)
 
-    chats = await asyncio.to_thread(_fetch)
-    return [_chat_to_dict(c) for c in chats]
+    try:
+        chats = await asyncio.to_thread(_fetch)
+        return [_chat_to_dict(c) for c in (chats or [])]
+    except Exception as e:
+        if isinstance(e, ChatsServiceError):
+            raise
+        raise FunPayNetworkError(f"Ошибка при получении списка чатов: {e}") from e
 
 
 async def get_chat_history(chat_id: int | str, last_message_id: Optional[int] = None) -> list[dict[str, Any]]:
     """Получить историю сообщений в чате."""
-    cardinal = get_cardinal()
-    acc = cardinal.account
-    if not acc or not getattr(acc, "is_initiated", False):
-        return []
+    acc = await _ensure_account_initiated()
 
     def _fetch():
-        try:
-            return acc.get_chat_history(chat_id, last_message_id=last_message_id)
-        except Exception:
-            return []
+        return acc.get_chat_history(chat_id, last_message_id=last_message_id)
 
-    messages = await asyncio.to_thread(_fetch)
-    return [_message_to_dict(m) for m in (messages or [])]
+    try:
+        messages = await asyncio.to_thread(_fetch)
+        return [_message_to_dict(m) for m in (messages or [])]
+    except Exception as e:
+        if isinstance(e, ChatsServiceError):
+            raise
+        raise FunPayNetworkError(f"Ошибка при получении истории сообщений: {e}") from e
 
 
 async def send_message(chat_id: int | str, text: str, chat_name: Optional[str] = None) -> bool:
@@ -85,25 +110,26 @@ async def send_message(chat_id: int | str, text: str, chat_name: Optional[str] =
     Отправить текстовое сообщение в чат FunPay через Cardinal.
     Поддерживает подстановки, $photo=ID, $sleep= и водяной знак.
     """
+    await _ensure_account_initiated()
     cardinal = get_cardinal()
-    if not cardinal.account or not getattr(cardinal.account, "is_initiated", False):
-        return False
 
     def _send():
         res = cardinal.send_message(chat_id, text, chat_name=chat_name)
         return bool(res)
 
-    return await asyncio.to_thread(_send)
+    try:
+        return await asyncio.to_thread(_send)
+    except Exception as e:
+        if isinstance(e, ChatsServiceError):
+            raise
+        raise FunPayNetworkError(f"Ошибка при отправке сообщения: {e}") from e
 
 
 async def send_image(chat_id: int | str, file_bytes: bytes, filename: str = "image.png", chat_name: Optional[str] = None) -> bool:
     """
     Загрузить и отправить изображение в чат FunPay.
     """
-    cardinal = get_cardinal()
-    acc = cardinal.account
-    if not acc:
-        return False
+    acc = await _ensure_account_initiated()
 
     def _upload_and_send():
         bio = io.BytesIO(file_bytes)
@@ -114,7 +140,12 @@ async def send_image(chat_id: int | str, file_bytes: bytes, filename: str = "ima
         res = acc.send_image(int(chat_id), img_id, chat_name=chat_name)
         return bool(res)
 
-    return await asyncio.to_thread(_upload_and_send)
+    try:
+        return await asyncio.to_thread(_upload_and_send)
+    except Exception as e:
+        if isinstance(e, ChatsServiceError):
+            raise
+        raise FunPayNetworkError(f"Ошибка при отправке изображения: {e}") from e
 
 
 async def get_buyer_viewing(buyer_id: int) -> Optional[dict[str, Any]]:

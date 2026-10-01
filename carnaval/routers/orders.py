@@ -38,9 +38,28 @@ async def list_orders(
     try:
         data = await orders_svc.get_orders(status=status, start_from=offset, limit=limit)
         return JSONResponse(data)
+    except orders_svc.OrdersServiceError as e:
+        logger.warning(f"Failed to fetch orders: [{e.error_code}] {e.message}")
+        return JSONResponse({
+            "ok": False,
+            "error_code": e.error_code,
+            "error": e.error_code.lower(),
+            "message": e.message,
+            "orders": [],
+            "next_order_id": None,
+            "funpay_connected": False,
+        }, status_code=200)
     except Exception as e:
         logger.warning(f"Failed to fetch orders: {e}")
-        return JSONResponse({"orders": [], "next_order_id": None, "funpay_connected": False, "error": "orders_fetch_failed", "message": str(e)}, status_code=200)
+        return JSONResponse({
+            "ok": False,
+            "error_code": "NETWORK_ERROR",
+            "error": "orders_fetch_failed",
+            "message": str(e),
+            "orders": [],
+            "next_order_id": None,
+            "funpay_connected": False,
+        }, status_code=200)
 
 
 @router.get("/orders/{order_id}")
@@ -53,11 +72,19 @@ async def get_order_details(
     try:
         order = await orders_svc.get_order(order_id)
         if not order:
-            return JSONResponse({"error": "not_found", "message": "Order not found"}, status_code=404)
+            return JSONResponse({"ok": False, "error": "not_found", "message": "Order not found"}, status_code=404)
         return JSONResponse(order)
+    except orders_svc.OrdersServiceError as e:
+        logger.warning(f"Failed to fetch order {order_id}: [{e.error_code}] {e.message}")
+        return JSONResponse({
+            "ok": False,
+            "error_code": e.error_code,
+            "error": e.error_code.lower(),
+            "message": e.message,
+        }, status_code=400)
     except Exception as e:
         logger.warning(f"Failed to fetch order {order_id}: {e}")
-        return JSONResponse({"error": "order_fetch_failed", "message": str(e)}, status_code=400)
+        return JSONResponse({"ok": False, "error_code": "NETWORK_ERROR", "error": "order_fetch_failed", "message": str(e)}, status_code=400)
 
 
 @router.post("/orders/{order_id}/refund")

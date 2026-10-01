@@ -77,6 +77,11 @@ print(f"{Fore.MAGENTA}{Style.BRIGHT} * Плагины: {Fore.BLUE}{Style.BRIGHT}
 print(f"{Fore.MAGENTA}{Style.BRIGHT} * Донат: {Fore.BLUE}{Style.BRIGHT}t.me/sidor_donate")
 print(f"{Fore.MAGENTA}{Style.BRIGHT} * Telegram-чат: {Fore.BLUE}{Style.BRIGHT}t.me/funpay_cardinal")
 
+from carnaval.paths import init_persistent_dirs
+from carnaval.db import init_db
+init_persistent_dirs()
+init_db()
+
 import bootstrap_env
 bootstrap_env.bootstrap()
 

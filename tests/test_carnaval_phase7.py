@@ -309,7 +309,8 @@ def test_bootstrap_env_headless(monkeypatch, tmp_path):
     assert cfg.get("Telegram", "token") == "123456:DummyTelegramToken"
     assert cfg.get("Carnaval", "enabled") == "1"
     assert cfg.get("Carnaval", "port") == "9999"
-    assert cfg.get("Carnaval", "allowedOrigins") == "https://app.vercel.app"
+    assert "https://app.vercel.app" in cfg.get("Carnaval", "allowedOrigins")
+    assert "https://web.telegram.org" in cfg.get("Carnaval", "allowedOrigins")
     assert len(cfg.get("Carnaval", "secretKey")) >= 32
 
 

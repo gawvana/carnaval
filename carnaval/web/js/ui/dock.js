@@ -1,29 +1,15 @@
 /**
- * ui/dock.js — нижний плавающий элемент управления: FAB + Dock с линзой.
- * Из mattering.html: .chrome > .fab + .dock.glass > .lens + .tab*5
+ * ui/dock.js — нижний плавающий элемент управления: Dock с линзой.
+ * Структура: .chrome > .dock.glass > .lens + .tab*5
  */
 
 import { tg } from '../tg.js';
-import { openSheet, closeSheet } from './sheet.js';
-import { t } from '../i18n.js';
 import { getIcon } from './icons.js';
 
 export function renderDock(tabs, onSelect) {
   const chrome = document.createElement('div');
   chrome.className = 'chrome';
   chrome.id = 'chrome';
-
-  // ── FAB (Floating Action Button) ──
-  const fab = document.createElement('button');
-  fab.className = 'fab press';
-  fab.id = 'fab';
-  fab.setAttribute('aria-label', t('create_action'));
-  fab.innerHTML = getIcon('plus');
-  fab.addEventListener('click', () => {
-    tg.haptic.impact('medium');
-    openCreateSheet();
-  });
-  chrome.appendChild(fab);
 
   // ── Dock ──
   const dock = document.createElement('nav');
@@ -108,58 +94,5 @@ export function renderDock(tabs, onSelect) {
     });
   });
 
-  return { el: chrome, setActive, fab };
-}
-
-function openCreateSheet() {
-  const content = `
-    <button class="opt press" id="action-create-lot">
-      <em style="background:var(--ok-c);color:var(--on-ok-c)">
-        ${getIcon('delivery')}
-      </em>
-      <div>
-        <b>Автовыдачу</b>
-        <span class="tx" style="font-size:12px;margin:0;display:block">Привязать товар или текст к лоту</span>
-      </div>
-    </button>
-    <button class="opt press" id="action-create-file">
-      <em style="background:var(--p);color:var(--on-p)">
-        ${getIcon('file')}
-      </em>
-      <div>
-        <b>${t('action_product_file')}</b>
-        <span class="tx" style="font-size:12px;margin:0;display:block">Файл со списком товаров</span>
-      </div>
-    </button>
-    <button class="opt press" id="action-create-cmd">
-      <em style="background:var(--t);color:var(--on-t)">
-        ${getIcon('message')}
-      </em>
-      <div>
-        <b>${t('action_auto_response')}</b>
-        <span class="tx" style="font-size:12px;margin:0;display:block">Ответ на ключевые слова</span>
-      </div>
-    </button>
-    <button class="opt press" id="action-create-tmplt">
-      <em style="background:var(--s);color:var(--on-s)">
-        ${getIcon('template')}
-      </em>
-      <div>
-        <b>${t('action_template')}</b>
-        <span class="tx" style="font-size:12px;margin:0;display:block">Заготовка для ручных ответов</span>
-      </div>
-    </button>
-  `;
-
-  openSheet(t('create_action'), content);
-
-  const goToAuto = () => {
-    closeSheet();
-    location.hash = 'automation';
-  };
-
-  document.getElementById('action-create-lot')?.addEventListener('click', goToAuto);
-  document.getElementById('action-create-file')?.addEventListener('click', goToAuto);
-  document.getElementById('action-create-cmd')?.addEventListener('click', goToAuto);
-  document.getElementById('action-create-tmplt')?.addEventListener('click', goToAuto);
+  return { el: chrome, setActive };
 }

@@ -37,10 +37,27 @@ async def list_chats(
     """Получить список чатов."""
     try:
         chats = await chats_svc.get_chats(update=update)
-        return JSONResponse({"chats": chats})
+        return JSONResponse({"ok": True, "chats": chats, "funpay_connected": True})
+    except chats_svc.ChatsServiceError as e:
+        logger.warning(f"Failed to fetch chats: [{e.error_code}] {e.message}")
+        return JSONResponse({
+            "ok": False,
+            "error_code": e.error_code,
+            "error": e.error_code.lower(),
+            "message": e.message,
+            "chats": [],
+            "funpay_connected": False,
+        }, status_code=200)
     except Exception as e:
         logger.warning(f"Failed to fetch chats: {e}")
-        return JSONResponse({"chats": [], "funpay_connected": False, "error": "chats_fetch_failed", "message": str(e)}, status_code=200)
+        return JSONResponse({
+            "ok": False,
+            "error_code": "NETWORK_ERROR",
+            "error": "chats_fetch_failed",
+            "message": str(e),
+            "chats": [],
+            "funpay_connected": False,
+        }, status_code=200)
 
 
 @router.get("/chats/{chat_id}/history")
@@ -53,10 +70,27 @@ async def chat_history(
     """Получить историю сообщений в чате."""
     try:
         messages = await chats_svc.get_chat_history(chat_id, last_message_id=before)
-        return JSONResponse({"messages": messages})
+        return JSONResponse({"ok": True, "messages": messages, "funpay_connected": True})
+    except chats_svc.ChatsServiceError as e:
+        logger.warning(f"Failed to fetch chat history for {chat_id}: [{e.error_code}] {e.message}")
+        return JSONResponse({
+            "ok": False,
+            "error_code": e.error_code,
+            "error": e.error_code.lower(),
+            "message": e.message,
+            "messages": [],
+            "funpay_connected": False,
+        }, status_code=200)
     except Exception as e:
         logger.warning(f"Failed to fetch chat history for {chat_id}: {e}")
-        return JSONResponse({"messages": [], "error": "history_fetch_failed", "message": str(e)}, status_code=200)
+        return JSONResponse({
+            "ok": False,
+            "error_code": "NETWORK_ERROR",
+            "error": "history_fetch_failed",
+            "message": str(e),
+            "messages": [],
+            "funpay_connected": False,
+        }, status_code=200)
 
 
 @router.post("/chats/{chat_id}/messages")

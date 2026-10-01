@@ -610,14 +610,14 @@ class Cardinal(object):
         Запускает бесконечный цикл поднятия категорий (если autoRaise в _main.cfg == 1)
         """
         if not self.profile.get_lots():
-            logger.info(_("crd_raise_loop_not_started"))
+            logger.info(localizer.translate("crd_raise_loop_not_started"))
             return
 
-        logger.info(_("crd_raise_loop_started"))
+        logger.info(localizer.translate("crd_raise_loop_started"))
         while getattr(self, "running", True):
             try:
                 if not self.MAIN_CFG["FunPay"].getboolean("autoRaise"):
-                    for _ in range(10):
+                    for _step in range(10):
                         if not getattr(self, "running", True):
                             return
                         time.sleep(1)
@@ -626,21 +626,22 @@ class Cardinal(object):
                 delay = next_time - int(time.time())
                 if delay <= 0:
                     continue
-                for _ in range(int(delay)):
+                for _step in range(int(delay)):
                     if not getattr(self, "running", True):
                         return
                     time.sleep(1)
-            except:
+            except Exception as e:
                 logger.debug("TRACEBACK", exc_info=True)
+                raise e
 
     def update_session_loop(self):
         """
         Запускает бесконечный цикл обновления данных о пользователе.
         """
-        logger.info(_("crd_session_loop_started"))
+        logger.info(localizer.translate("crd_session_loop_started"))
         sleep_time = 3600
         while getattr(self, "running", True):
-            for _ in range(int(sleep_time)):
+            for _step in range(int(sleep_time)):
                 if not getattr(self, "running", True):
                     return
                 time.sleep(1)
@@ -750,9 +751,14 @@ class Cardinal(object):
         self.run_id += 1
         self.start_time = int(time.time())
         if self.runner is not None:
-            Thread(target=self.runner.loop, daemon=True).start()
-            Thread(target=self.lots_raise_loop, daemon=True).start()
-            Thread(target=self.update_session_loop, daemon=True).start()
+            self.running = True
+            try:
+                from carnaval.services.supervisor import supervisor
+                supervisor.start_all(self)
+            except Exception:
+                Thread(target=self.runner.loop, daemon=True).start()
+                Thread(target=self.lots_raise_loop, daemon=True).start()
+                Thread(target=self.update_session_loop, daemon=True).start()
         else:
             logger.info("FunPay циклы будут запущены автоматически после ввода Golden Key в Mini App.")
 
@@ -774,6 +780,11 @@ class Cardinal(object):
         Останавливает кардинал, освобождает lock и останавливает Telegram бота.
         """
         self.running = False
+        try:
+            from carnaval.services.supervisor import supervisor
+            supervisor.stop_all()
+        except Exception:
+            pass
         self.run_id += 1
         self.run_handlers(self.pre_stop_handlers, (self,))
         if hasattr(self, "telegram") and self.telegram and hasattr(self.telegram, "stop"):

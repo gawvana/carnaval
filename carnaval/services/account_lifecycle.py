@@ -95,8 +95,19 @@ class AccountLifecycleManager:
     """
 
     _instance: Optional[AccountLifecycleManager] = None
-    _lock = asyncio.Lock()
     _thread_lock = threading.RLock()
+
+    @property
+    def _lock(self) -> asyncio.Lock:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.Lock()
+        if not hasattr(self, "_loop_locks"):
+            self._loop_locks = {}
+        if loop not in self._loop_locks:
+            self._loop_locks[loop] = asyncio.Lock()
+        return self._loop_locks[loop]
 
     def __new__(cls) -> AccountLifecycleManager:
         if cls._instance is None:
@@ -473,9 +484,14 @@ class AccountLifecycleManager:
             if cardinal.runner is None:
                 cardinal.account.runner = None
                 cardinal.runner = FunPayAPI.Runner(cardinal.account, cardinal.old_mode_enabled)
-                threading.Thread(target=cardinal.runner.loop, daemon=True, name="Carnaval-RunnerLoop").start()
-                threading.Thread(target=cardinal.lots_raise_loop, daemon=True, name="Carnaval-LotsRaise").start()
-                threading.Thread(target=cardinal.update_session_loop, daemon=True, name="Carnaval-SessionLoop").start()
+                cardinal.running = True
+                try:
+                    from carnaval.services.supervisor import supervisor
+                    supervisor.start_all(cardinal)
+                except Exception:
+                    threading.Thread(target=cardinal.runner.loop, daemon=True, name="Carnaval-RunnerLoop").start()
+                    threading.Thread(target=cardinal.lots_raise_loop, daemon=True, name="Carnaval-LotsRaise").start()
+                    threading.Thread(target=cardinal.update_session_loop, daemon=True, name="Carnaval-SessionLoop").start()
 
             cardinal.running = True
 
@@ -484,6 +500,11 @@ class AccountLifecycleManager:
             cardinal = _safe_get_cardinal()
             if cardinal:
                 cardinal.running = False
+                try:
+                    from carnaval.services.supervisor import supervisor
+                    supervisor.stop_all()
+                except Exception:
+                    pass
                 if cardinal.runner:
                     try:
                         # Сбрасываем очередь полезной нагрузки

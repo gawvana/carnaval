@@ -165,7 +165,6 @@ body.open #app {
   transition: height .6s var(--spring), transform .6s var(--spring);
 }
 .chrome.min .dock { height: 54px; transform: scale(.9) }
-.chrome.min .fab { translate: 0 6px }
 
 .tab {
   position: relative; z-index: 1; flex: 1; border-radius: 28px;
@@ -198,24 +197,118 @@ body.open #app {
   -webkit-backdrop-filter: blur(3px) saturate(240%);
 }
 
-/* ── FAB ───────────────────────────────────────────── */
+/* ── FAB отключен ──────────────────────────────────── */
 .fab {
-  display: grid; place-items: center;
-  width: 58px; height: 58px;
-  margin: 0 6px 12px auto;
-  border-radius: 20px;
-  color: var(--on-primary);
-  background: color-mix(in srgb, var(--primary) 86%, transparent);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
-  border: 1px solid rgba(255,255,255,.35);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.5),
-              0 12px 26px color-mix(in srgb, var(--primary) 45%, transparent);
-  transition: transform .55s var(--spring), border-radius .7s var(--bounce), translate .6s var(--spring);
+  display: none !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
 }
-.fab:hover { border-radius: 29px }
-.fab:active { transform: scale(.92); transition-duration: .15s }
-.fab svg { width: 26px; height: 26px; stroke-width: 2 }
+
+/* ── Mobile Chat Overhaul ──────────────────────────── */
+body.in-chat-thread .chrome {
+  transform: translate(-50%, 150%) !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: transform .35s cubic-bezier(0.2, 0.8, 0.2, 1), opacity .25s ease;
+}
+body.in-chat-thread #top-bar {
+  display: none !important;
+}
+body.in-chat-thread .wrap {
+  padding-bottom: 0 !important;
+}
+
+.mobile-chat-thread {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  z-index: 35;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: chatThreadSlideIn .25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes chatThreadSlideIn {
+  from { transform: translateX(100%); opacity: .5; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.mobile-chat-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 12px;
+  background: var(--glass2);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-bottom: 1px solid var(--edge);
+  z-index: 5;
+}
+
+.mobile-chat-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--p);
+  color: var(--on-p);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 16px;
+  flex: none;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--p) 35%, transparent);
+}
+
+.mobile-chat-messages {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mobile-chat-composer {
+  flex: none;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: var(--glass2);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-top: 1px solid var(--edge);
+  z-index: 5;
+  transition: padding-bottom .15s ease;
+}
+
+.mobile-chat-composer-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 12px;
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--on) 6%, transparent);
+  border: 1px solid var(--edge);
+}
+
+.mobile-chat-composer-inner input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  outline: none;
+  font-size: 15px;
+  padding: 6px 0;
+}
 
 /* ── Sheet (bottom sheet) ───────────────────────────── */
 .scrim {

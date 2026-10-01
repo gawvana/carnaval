@@ -21,6 +21,35 @@ DEFAULT_UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"
 )
 
+DEFAULT_ALLOWED_ORIGINS = [
+    "https://web.telegram.org",
+    "https://carnaval-cardinal.vercel.app",
+    "https://amazing-babbage-tau.vercel.app",
+    "http://localhost:5000",
+    "http://127.0.0.1:5000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+
+
+def resolve_allowed_origins_string() -> str:
+    """
+    Формирует строку разрешённых CORS-origins для конфигурации:
+    - '*' только если явно задано CARNAVAL_ALLOW_ANY_ORIGIN=1
+    - иначе строгий allowlist по умолчанию плюс любые кастомные origins из CARNAVAL_ALLOWED_ORIGINS
+    """
+    if os.getenv("CARNAVAL_ALLOW_ANY_ORIGIN", "0").strip() == "1":
+        return "*"
+
+    origins = list(DEFAULT_ALLOWED_ORIGINS)
+    custom = os.getenv("CARNAVAL_ALLOWED_ORIGINS", "").strip()
+    if custom:
+        for c in custom.split(","):
+            c = c.strip()
+            if c and c != "*" and c not in origins:
+                origins.append(c)
+    return ",".join(origins)
+
 
 def bootstrap() -> bool:
     """
@@ -32,6 +61,11 @@ def bootstrap() -> bool:
     
     Возвращает True если файл создан/обновлен, False если переменных нет.
     """
+    from carnaval.paths import init_persistent_dirs
+    from carnaval.db import init_db
+    init_persistent_dirs()
+    init_db()
+
     config_path = "configs/_main.cfg"
     os.makedirs("configs", exist_ok=True)
     os.makedirs("storage/cache", exist_ok=True)
@@ -64,7 +98,7 @@ def bootstrap() -> bool:
     host = os.getenv("CARNAVAL_HOST", "0.0.0.0")
     carnaval_enabled = os.getenv("CARNAVAL_ENABLED", "1")
     carnaval_secret = os.getenv("CARNAVAL_SECRET", "").strip() or secrets.token_hex(32)
-    allowed_origins = os.getenv("CARNAVAL_ALLOWED_ORIGINS", "*").strip()
+    allowed_origins = resolve_allowed_origins_string()
     public_url = os.getenv("CARNAVAL_PUBLIC_URL", "").strip()
     locale = os.getenv("LOCALE", "ru").strip()
     proxy = os.getenv("FUNPAY_PROXY", "").strip()
@@ -201,9 +235,23 @@ def _sync_existing_config(config_path: str) -> bool:
             cfg.set("Carnaval", "enabled", enabled)
             changed = True
 
-        origins = os.getenv("CARNAVAL_ALLOWED_ORIGINS")
-        if origins and cfg.get("Carnaval", "allowedOrigins", fallback=None) != origins:
-            cfg.set("Carnaval", "allowedOrigins", origins)
+        # Синхронизация CORS origins: строгий allowlist по умолчанию, '*' только при CARNAVAL_ALLOW_ANY_ORIGIN=1
+        allow_any = os.getenv("CARNAVAL_ALLOW_ANY_ORIGIN", "0").strip() == "1"
+        current_origins = cfg.get("Carnaval", "allowedOrigins", fallback=None)
+        if allow_any:
+            target_origins = "*"
+        else:
+            env_origins = os.getenv("CARNAVAL_ALLOWED_ORIGINS", "").strip()
+            if env_origins:
+                target_origins = resolve_allowed_origins_string()
+            elif current_origins == "*" or current_origins is None or not current_origins.strip():
+                # Заменяем небезопасный дефолт '*' на строгий allowlist
+                target_origins = resolve_allowed_origins_string()
+            else:
+                target_origins = current_origins
+
+        if current_origins != target_origins:
+            cfg.set("Carnaval", "allowedOrigins", target_origins)
             changed = True
 
         public_url = os.getenv("CARNAVAL_PUBLIC_URL")

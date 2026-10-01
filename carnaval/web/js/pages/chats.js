@@ -1,23 +1,35 @@
 /**
  * pages/chats.js — Экран чатов и переписок FunPay.
- * Список диалогов с индикацией непрочитанных, живой диалог,
- * отправка текста и изображений, статус 'Покупатель смотрит',
- * мгновенное добавление сообщений через SSE.
+ * Двухуровневый мобильный UX: список диалогов -> открытие полноэкранного чата.
+ * Шапка с кнопкой назад и аватаром, поток сообщений с автопрокруткой,
+ * адаптивный мобильный composer с поддержкой Safe Area и клавиатуры,
+ * скрытие нижнего дока в треде, шаблоны быстрых ответов,
+ * мгновенное добавление сообщений через SSE и статус 'Покупатель смотрит'.
  */
 
-import { getChats, getChatHistory, sendChatMessage, sendChatImage, getBuyerViewing, openEventStream } from '../api.js';
+import {
+  getChats,
+  getChatHistory,
+  sendChatMessage,
+  sendChatImage,
+  getBuyerViewing,
+  openEventStream,
+  getTemplates,
+} from '../api.js';
 import { tg } from '../tg.js';
 import { renderHeader } from '../ui/header.js';
 import { showToast } from '../ui/toast.js';
 import { escapeHtml } from '../ui/sanitize.js';
+import { openSheet, closeSheet } from '../ui/sheet.js';
 
 let _activeChatId = null;
 let _activeChatName = null;
 let _stopChatEvents = null;
+let _cleanupViewport = null;
 
 export async function renderChats(wrap) {
   wrap.innerHTML = '';
-  _activeChatId = null;
+  _closeActiveThread();
 
   const header = renderHeader({
     title: 'Чаты',
@@ -32,11 +44,41 @@ export async function renderChats(wrap) {
     <div id="chats-list-view">
       ${renderChatsSkeleton()}
     </div>
-    <div id="chat-thread-view" style="display:none"></div>
+    <div id="chat-thread-view" class="mobile-chat-thread" style="display:none"></div>
   `;
   wrap.appendChild(container);
 
   await loadChatsList();
+
+  // Очистка при смене вкладки в роутере
+  return () => {
+    _closeActiveThread();
+  };
+}
+
+function _closeActiveThread() {
+  _activeChatId = null;
+  _activeChatName = null;
+  if (_stopChatEvents) {
+    try { _stopChatEvents(); } catch (_) {}
+    _stopChatEvents = null;
+  }
+  if (_cleanupViewport) {
+    try { _cleanupViewport(); } catch (_) {}
+    _cleanupViewport = null;
+  }
+  document.body.classList.remove('in-chat-thread');
+  try { tg.backButton.hide(); } catch (_) {}
+
+  const threadView = document.getElementById('chat-thread-view');
+  if (threadView) {
+    threadView.style.display = 'none';
+    threadView.innerHTML = '';
+  }
+  const listView = document.getElementById('chats-list-view');
+  if (listView) {
+    listView.style.display = 'block';
+  }
 }
 
 async function loadChatsList() {
@@ -45,18 +87,33 @@ async function loadChatsList() {
 
   try {
     const res = await getChats();
-    const chats = res.chats || [];
 
-    if (chats.length === 0) {
-      listView.innerHTML = `
-        <div class="empty rv in">
-          <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          <p>Диалогов пока нет</p>
-        </div>
-      `;
+    // 1. Ошибка подключения FunPay или сети
+    if (res.ok === false || res.error_code) {
+      renderChatsErrorState(listView, res);
       return;
     }
 
+    const chats = res.chats || [];
+
+    // 2. Успешный ответ при 0 чатов
+    if (chats.length === 0) {
+      listView.innerHTML = `
+        <div class="empty rv in" style="padding:48px 16px; text-align:center">
+          <svg viewBox="0 0 24 24" style="width:48px;height:48px;color:var(--muted);margin-bottom:12px;opacity:.7"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <b style="font-size:17px;display:block;margin-bottom:6px">Диалогов пока нет</b>
+          <p style="font-size:14px;color:var(--muted);max-width:280px;margin:0 auto 16px">Здесь появятся ваши сообщения с покупателями на FunPay</p>
+          <button class="btn press" id="refresh-chats-btn" style="height:38px;padding:0 20px;font-size:13px;margin:0 auto">Обновить</button>
+        </div>
+      `;
+      listView.querySelector('#refresh-chats-btn')?.addEventListener('click', () => {
+        listView.innerHTML = renderChatsSkeleton();
+        loadChatsList();
+      });
+      return;
+    }
+
+    // 3. Список чатов
     listView.innerHTML = `
       <div style="display:grid; gap:8px">
         ${chats.map(renderChatCardHTML).join('')}
@@ -71,12 +128,40 @@ async function loadChatsList() {
       });
     });
   } catch (err) {
-    listView.innerHTML = `
-      <div class="empty rv in">
-        <p style="color:var(--err)">Не удалось загрузить чаты<br><small>${err.message}</small></p>
-      </div>
-    `;
+    renderChatsErrorState(listView, { error_code: 'CLIENT_ERROR', message: err.message });
   }
+}
+
+function renderChatsErrorState(container, errData) {
+  const isNotInit = errData.error_code === 'FUNPAY_ACCOUNT_NOT_INITIALIZED';
+  const title = isNotInit ? 'Аккаунт FunPay не подключен' : 'Ошибка загрузки диалогов';
+  const msg = errData.message || (isNotInit ? 'Требуется подключить Golden Key в настройках.' : 'Не удалось связаться с сервером FunPay.');
+
+  container.innerHTML = `
+    <div class="card rv in" style="padding:24px 18px; text-align:center; margin-top:16px; border:1px solid color-mix(in srgb, var(--err) 30%, transparent); background:color-mix(in srgb, var(--err) 8%, var(--surface))">
+      <div style="width:52px; height:52px; border-radius:50%; background:var(--err-c); color:var(--on-err-c); display:grid; place-items:center; margin:0 auto 12px">
+        <svg viewBox="0 0 24 24" style="width:26px;height:26px;stroke-width:2;stroke:currentColor;fill:none"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </div>
+      <b style="font-size:17px; display:block; margin-bottom:6px">${escapeHtml(title)}</b>
+      <p style="font-size:13px; color:var(--muted); margin:0 auto 16px; max-width:320px">${escapeHtml(msg)}</p>
+      
+      <div style="display:flex; justify-content:center; gap:10px; flex-wrap:wrap">
+        ${isNotInit ? `
+          <button class="btn press" id="go-setup-key-btn" style="height:40px; padding:0 18px; font-size:13px">Настроить аккаунт</button>
+        ` : ''}
+        <button class="btn tn press" id="retry-chats-btn" style="height:40px; padding:0 18px; font-size:13px">Повторить попытку</button>
+      </div>
+    </div>
+  `;
+
+  container.querySelector('#go-setup-key-btn')?.addEventListener('click', () => {
+    location.hash = 'more';
+  });
+
+  container.querySelector('#retry-chats-btn')?.addEventListener('click', () => {
+    container.innerHTML = renderChatsSkeleton();
+    loadChatsList();
+  });
 }
 
 function renderChatCardHTML(c) {
@@ -112,59 +197,113 @@ async function openChatThread(chatId, chatName) {
   const threadView = document.getElementById('chat-thread-view');
   if (!listView || !threadView) return;
 
+  // Активируем полноэкранный режим треда и скрытие нижнего дока
+  document.body.classList.add('in-chat-thread');
   listView.style.display = 'none';
-  threadView.style.display = 'block';
+  threadView.style.display = 'flex';
+
+  const initials = escapeHtml((chatName || 'U')[0].toUpperCase());
+  const safeName = escapeHtml(chatName);
 
   threadView.innerHTML = `
-    <!-- Шапка чата -->
-    <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px">
-      <button class="ib press" id="back-to-chats-btn" aria-label="Назад">
-        <svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+    <!-- Мобильная шапка чата -->
+    <header class="mobile-chat-header">
+      <button class="ib press" id="back-to-chats-btn" aria-label="Назад" style="flex:none; width:38px; height:38px">
+        <svg viewBox="0 0 24 24" style="width:22px;height:22px;stroke-width:2.2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
       </button>
-      <div>
-        <b style="font-size:16px; display:block">${escapeHtml(chatName)}</b>
-        <span id="buyer-viewing-label" style="font-size:11px; color:var(--muted)"></span>
+
+      <div class="mobile-chat-avatar">
+        ${initials}
+      </div>
+
+      <div style="flex:1; min-width:0">
+        <b style="font-size:16px; font-weight:700; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${safeName}</b>
+        <span id="buyer-viewing-label" style="font-size:11px; color:var(--muted); display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">FunPay диалог #${escapeHtml(chatId)}</span>
+      </div>
+    </header>
+
+    <!-- Поток сообщений -->
+    <div id="messages-container" class="mobile-chat-messages">
+      <div style="text-align:center; padding:48px 0">
+        <div style="width:32px; height:32px; border-radius:50%; border:3px solid var(--track); border-top-color:var(--primary); animation:spin 1s linear infinite; margin:0 auto"></div>
       </div>
     </div>
 
-    <!-- Поток сообщений -->
-    <div id="messages-container" style="display:flex; flex-direction:column; gap:8px; min-height:360px; max-height:55vh; overflow-y:auto; padding:8px 4px; scrollbar-width:none">
-      <div style="text-align:center; padding:32px 0"><div style="width:28px; height:28px; border-radius:50%; border:3px solid var(--track); border-top-color:var(--primary); animation:spin 1s linear infinite; margin:0 auto"></div></div>
-    </div>
+    <!-- Мобильный Composer (поле ввода) -->
+    <div class="mobile-chat-composer" id="chat-composer">
+      <div class="mobile-chat-composer-inner">
+        <!-- Прикрепление картинки -->
+        <label class="ib press" style="flex:none; width:36px; height:36px; cursor:pointer" title="Прикрепить изображение">
+          <input type="file" id="chat-file-input" accept="image/*" style="display:none">
+          <svg viewBox="0 0 24 24" style="width:20px;height:20px"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+        </label>
 
-    <!-- Поле ввода и отправки (Composer) -->
-    <div class="panel glass" style="padding:10px; border-radius:24px; margin-top:12px; display:flex; gap:8px; align-items:center">
-      <label class="ib press" style="flex:none; cursor:pointer" title="Прикрепить изображение">
-        <input type="file" id="chat-file-input" accept="image/*" style="display:none">
-        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-      </label>
+        <!-- Быстрые шаблоны ответов -->
+        <button class="ib press" id="chat-templates-btn" type="button" style="flex:none; width:36px; height:36px" title="Шаблоны ответов">
+          <svg viewBox="0 0 24 24" style="width:20px;height:20px"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+        </button>
 
-      <input type="text" id="chat-msg-input" placeholder="Написать сообщение..." style="flex:1; border:none; background:none; font:inherit; color:inherit; outline:none; font-size:14px">
+        <!-- Текстовое поле -->
+        <input type="text" id="chat-msg-input" placeholder="Сообщение..." autocomplete="off">
 
-      <button class="ib press" id="chat-send-btn" style="color:var(--primary); flex:none" aria-label="Отправить">
-        <svg viewBox="0 0 24 24" style="transform:translateX(1px)"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-      </button>
+        <!-- Кнопка отправки -->
+        <button class="ib press" id="chat-send-btn" type="button" style="color:var(--primary); flex:none; width:36px; height:36px" aria-label="Отправить">
+          <svg viewBox="0 0 24 24" style="width:20px;height:20px;transform:translateX(1px)"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+        </button>
+      </div>
     </div>
   `;
 
-  // Кнопка возврата
-  document.getElementById('back-to-chats-btn')?.addEventListener('click', () => {
-    _activeChatId = null;
-    threadView.style.display = 'none';
-    listView.style.display = 'block';
+  // Обработчик закрытия ветки чата
+  const handleBack = () => {
+    _closeActiveThread();
     loadChatsList();
-  });
+  };
 
-  // Загрузка сообщений
+  document.getElementById('back-to-chats-btn')?.addEventListener('click', handleBack);
+  tg.backButton.show(handleBack);
+
+  // Адаптация под виртуальную клавиатуру мобильных устройств
+  const composerEl = document.getElementById('chat-composer');
+  const msgsEl = document.getElementById('messages-container');
+
+  const onViewportResize = () => {
+    if (!window.visualViewport || !composerEl) return;
+    const keyboardHeight = Math.max(0, window.innerHeight - window.visualViewport.height - window.visualViewport.offsetTop);
+    if (keyboardHeight > 0) {
+      composerEl.style.paddingBottom = `calc(${keyboardHeight}px + 8px)`;
+    } else {
+      composerEl.style.paddingBottom = 'calc(8px + env(safe-area-inset-bottom, 0px))';
+    }
+    if (msgsEl) {
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    }
+  };
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', onViewportResize);
+    window.visualViewport.addEventListener('scroll', onViewportResize);
+    _cleanupViewport = () => {
+      window.visualViewport.removeEventListener('resize', onViewportResize);
+      window.visualViewport.removeEventListener('scroll', onViewportResize);
+    };
+  }
+
+  // Загрузка сообщений и статуса "Покупатель смотрит"
   await loadMessages(chatId);
-
-  // Подгрузка информации "Покупатель смотрит"
   loadBuyerViewingInfo(chatId);
 
-  // Обработчик отправки сообщения
+  // Обработчики ввода и отправки
   const msgInput = document.getElementById('chat-msg-input');
   const sendBtn = document.getElementById('chat-send-btn');
   const fileInput = document.getElementById('chat-file-input');
+  const tmplBtn = document.getElementById('chat-templates-btn');
+
+  msgInput?.addEventListener('focus', () => {
+    setTimeout(() => {
+      if (msgsEl) msgsEl.scrollTop = msgsEl.scrollHeight;
+    }, 250);
+  });
 
   async function handleSend() {
     const text = msgInput.value.trim();
@@ -172,7 +311,6 @@ async function openChatThread(chatId, chatName) {
     msgInput.value = '';
     tg.haptic.impact('light');
 
-    // Локально отображаем оптимистичное сообщение
     appendMessageHTML({
       id: Date.now(),
       text,
@@ -206,6 +344,11 @@ async function openChatThread(chatId, chatName) {
     }
   });
 
+  // Шаблоны ответов
+  tmplBtn?.addEventListener('click', () => {
+    openTemplatesSheet(chatId, chatName, msgInput);
+  });
+
   // SSE слушатель новых сообщений в открытом чате
   if (_stopChatEvents) _stopChatEvents();
   _stopChatEvents = openEventStream((ev) => {
@@ -228,6 +371,21 @@ async function loadMessages(chatId) {
 
   try {
     const res = await getChatHistory(chatId);
+
+    if (res.ok === false || res.error_code) {
+      container.innerHTML = `
+        <div class="empty" style="padding:48px 16px; text-align:center">
+          <p style="color:var(--err); margin-bottom:12px">${escapeHtml(res.message || 'Ошибка загрузки сообщений')}</p>
+          <button class="btn tn press" id="retry-history-btn" style="height:36px; padding:0 16px; font-size:13px; margin:0 auto">Повторить</button>
+        </div>
+      `;
+      container.querySelector('#retry-history-btn')?.addEventListener('click', () => {
+        container.innerHTML = `<div style="text-align:center; padding:48px 0"><div style="width:32px; height:32px; border-radius:50%; border:3px solid var(--track); border-top-color:var(--primary); animation:spin 1s linear infinite; margin:0 auto"></div></div>`;
+        loadMessages(chatId);
+      });
+      return;
+    }
+
     const msgs = res.messages || [];
 
     if (msgs.length === 0) {
@@ -241,7 +399,16 @@ async function loadMessages(chatId) {
     });
     container.scrollTop = container.scrollHeight;
   } catch (err) {
-    container.innerHTML = `<div class="empty"><p style="color:var(--err)">Ошибка загрузки сообщений</p></div>`;
+    container.innerHTML = `
+      <div class="empty" style="padding:48px 16px; text-align:center">
+        <p style="color:var(--err); margin-bottom:12px">Ошибка загрузки сообщений<br><small>${escapeHtml(err.message)}</small></p>
+        <button class="btn tn press" id="retry-history-btn" style="height:36px; padding:0 16px; font-size:13px; margin:0 auto">Повторить</button>
+      </div>
+    `;
+    container.querySelector('#retry-history-btn')?.addEventListener('click', () => {
+      container.innerHTML = `<div style="text-align:center; padding:48px 0"><div style="width:32px; height:32px; border-radius:50%; border:3px solid var(--track); border-top-color:var(--primary); animation:spin 1s linear infinite; margin:0 auto"></div></div>`;
+      loadMessages(chatId);
+    });
   }
 }
 
@@ -260,9 +427,9 @@ function appendMessageHTML(m, scroll = true) {
   const safeText = escapeHtml(m.text || '');
 
   el.innerHTML = `
-    <div style="max-width:80%; padding:10px 14px; border-radius:${isMe ? '18px 18px 4px 18px' : '18px 18px 18px 4px'}; background:${isMe ? 'var(--primary)' : 'var(--n)'}; color:${isMe ? 'var(--on-primary)' : 'var(--on-n)'}; font-size:14px; word-break:break-word">
+    <div style="max-width:82%; padding:10px 14px; border-radius:${isMe ? '18px 18px 4px 18px' : '18px 18px 18px 4px'}; background:${isMe ? 'var(--primary)' : 'var(--n)'}; color:${isMe ? 'var(--on-primary)' : 'var(--on-n)'}; font-size:14px; word-break:break-word; box-shadow:0 2px 8px rgba(0,0,0,.08)">
       ${safeImg ? `<img src="${safeImg}" style="max-width:100%; border-radius:12px; margin-bottom:6px; display:block">` : ''}
-      <div>${safeText}</div>
+      <div style="white-space:pre-wrap">${safeText}</div>
     </div>
   `;
 
@@ -275,12 +442,49 @@ async function loadBuyerViewingInfo(chatId) {
   if (!label) return;
 
   try {
-    // В FunPay chat_id в личных переписках совпадает с buyer_id
     const res = await getBuyerViewing(chatId, parseInt(chatId, 10));
     if (res.viewing?.text) {
       label.textContent = `Смотрит: ${res.viewing.text}`;
     }
   } catch (_) {}
+}
+
+async function openTemplatesSheet(chatId, chatName, inputEl) {
+  try {
+    const res = await getTemplates();
+    const tmpls = res.templates || [];
+    if (tmpls.length === 0) {
+      showToast('Нет сохраненных шаблонов', '');
+      return;
+    }
+
+    const content = `
+      <div style="display:flex; flex-direction:column; gap:8px; max-height:60vh; overflow-y:auto; padding-bottom:12px">
+        ${tmpls.map((t, idx) => `
+          <button class="card n press template-select-item" data-idx="${t.index ?? idx}" style="padding:12px 14px; text-align:left; width:100%; border-radius:18px; border:1px solid var(--edge)">
+            <b style="font-size:14px; display:block; margin-bottom:4px; color:var(--primary)">Шаблон #${(t.index ?? idx) + 1}</b>
+            <div style="font-size:13px; color:var(--on-n); white-space:pre-wrap; word-break:break-word; max-height:60px; overflow:hidden; text-overflow:ellipsis">${escapeHtml(t.text || '')}</div>
+          </button>
+        `).join('')}
+      </div>
+    `;
+
+    openSheet('Шаблоны быстрых ответов', content);
+
+    document.querySelectorAll('.template-select-item').forEach((item) => {
+      item.addEventListener('click', async () => {
+        const idx = Number(item.dataset.idx);
+        const tmpl = tmpls.find(t => (t.index ?? 0) === idx) || tmpls[idx];
+        closeSheet();
+        if (inputEl && tmpl?.text) {
+          inputEl.value = tmpl.text;
+          inputEl.focus();
+        }
+      });
+    });
+  } catch (err) {
+    showToast('Не удалось загрузить шаблоны', 'err');
+  }
 }
 
 function renderChatsSkeleton() {

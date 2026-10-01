@@ -87,6 +87,41 @@ async function loadOrders(isRefresh = false) {
 
   try {
     const res = await getOrders(_currentStatus, _nextOrderId, 20);
+
+    if (res.ok === false || res.error_code) {
+      const isNotInit = res.error_code === 'FUNPAY_ACCOUNT_NOT_INITIALIZED';
+      const title = isNotInit ? 'Аккаунт FunPay не подключен' : 'Ошибка загрузки заказов';
+      const msg = res.message || (isNotInit ? 'Требуется подключить Golden Key в настройках.' : 'Не удалось связаться с сервером FunPay.');
+
+      content.innerHTML = `
+        <div class="card rv in" style="padding:24px 18px; text-align:center; margin-top:16px; border:1px solid color-mix(in srgb, var(--err) 30%, transparent); background:color-mix(in srgb, var(--err) 8%, var(--surface))">
+          <div style="width:52px; height:52px; border-radius:50%; background:var(--err-c); color:var(--on-err-c); display:grid; place-items:center; margin:0 auto 12px">
+            <svg viewBox="0 0 24 24" style="width:26px;height:26px;stroke-width:2;stroke:currentColor;fill:none"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </div>
+          <b style="font-size:17px; display:block; margin-bottom:6px">${escapeHtml(title)}</b>
+          <p style="font-size:13px; color:var(--muted); margin:0 auto 16px; max-width:320px">${escapeHtml(msg)}</p>
+          
+          <div style="display:flex; justify-content:center; gap:10px; flex-wrap:wrap">
+            ${isNotInit ? `
+              <button class="btn press" id="go-setup-key-orders-btn" style="height:40px; padding:0 18px; font-size:13px">Настроить аккаунт</button>
+            ` : ''}
+            <button class="btn tn press" id="retry-orders-btn" style="height:40px; padding:0 18px; font-size:13px">Повторить попытку</button>
+          </div>
+        </div>
+      `;
+
+      content.querySelector('#go-setup-key-orders-btn')?.addEventListener('click', () => {
+        location.hash = 'more';
+      });
+
+      content.querySelector('#retry-orders-btn')?.addEventListener('click', () => {
+        loadOrders(true);
+      });
+
+      if (loadMore) loadMore.style.display = 'none';
+      return;
+    }
+
     _nextOrderId = res.next_order_id;
 
     if (isRefresh) {

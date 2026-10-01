@@ -30,8 +30,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("Carnaval")
 
-# Текущий список разрешённых CORS-origins (обновляется при старте)
-_ALLOWED_ORIGINS: list[str] = ["*"]
+DEFAULT_ALLOWED_ORIGINS: list[str] = [
+    "https://web.telegram.org",
+    "https://carnaval-cardinal.vercel.app",
+    "https://amazing-babbage-tau.vercel.app",
+    "http://localhost:5000",
+    "http://127.0.0.1:5000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+
+# Текущий список разрешённых CORS-origins (строгий allowlist по умолчанию)
+_ALLOWED_ORIGINS: list[str] = list(DEFAULT_ALLOWED_ORIGINS)
 
 # In-memory rate limiting для мутирующих запросов (POST, PATCH, DELETE)
 _MUTATING_LIMIT = 60  # запросов в минуту
@@ -39,16 +49,57 @@ _MUTATING_WINDOW = 60
 _mutating_requests: dict[str, list[float]] = collections.defaultdict(list)
 
 
-def set_allowed_origins(raw: str) -> None:
-    """Парсит строку 'origin1,origin2' и обновляет глобальный список."""
+def is_any_origin_allowed() -> bool:
+    """Проверяет, разрешен ли wildcard '*' через переменную CARNAVAL_ALLOW_ANY_ORIGIN=1."""
+    return os.getenv("CARNAVAL_ALLOW_ANY_ORIGIN", "0").strip() == "1"
+
+
+def set_allowed_origins(raw: Optional[str] = None) -> None:
+    """
+    Парсит строку 'origin1,origin2' и обновляет глобальный список разрешённых origins.
+    По умолчанию применяется строгий allowlist:
+    - https://web.telegram.org
+    - https://carnaval-cardinal.vercel.app
+    - https://amazing-babbage-tau.vercel.app
+    - http://localhost:5000, http://127.0.0.1:5000
+    - http://localhost:8000, http://127.0.0.1:8000
+    Плюс любые origins из CARNAVAL_ALLOWED_ORIGINS.
+    '*' разрешен ТОЛЬКО если явно задан CARNAVAL_ALLOW_ANY_ORIGIN=1.
+    """
     global _ALLOWED_ORIGINS
-    if not raw or raw.strip() == "*":
+
+    if is_any_origin_allowed():
         _ALLOWED_ORIGINS = ["*"]
-    else:
-        _ALLOWED_ORIGINS = [o.strip() for o in raw.split(",") if o.strip()]
+        return
+
+    origins = list(DEFAULT_ALLOWED_ORIGINS)
+
+    if raw:
+        for item in raw.split(","):
+            item = item.strip()
+            if not item or item == "*":
+                continue
+            if item not in origins:
+                origins.append(item)
+
+    env_origins = os.getenv("CARNAVAL_ALLOWED_ORIGINS", "").strip()
+    if env_origins:
+        for item in env_origins.split(","):
+            item = item.strip()
+            if not item or item == "*":
+                continue
+            if item not in origins:
+                origins.append(item)
+
+    _ALLOWED_ORIGINS = origins
 
 
 def get_allowed_origins() -> list[str]:
+    """Возвращает актуальный список разрешённых origins."""
+    if is_any_origin_allowed():
+        return ["*"]
+    if _ALLOWED_ORIGINS == ["*"]:
+        set_allowed_origins()
     return list(_ALLOWED_ORIGINS)
 
 
@@ -265,15 +316,35 @@ def start(cardinal: "Cardinal", host: str = "0.0.0.0", port: int = 5000) -> None
     auth.init(secret)
 
     # Настроить разрешённые CORS-origins
-    raw_origins = cardinal.MAIN_CFG.get("Carnaval", "allowedOrigins", fallback="*")
-    if not raw_origins or raw_origins.strip() == "*":
-        logger.info("Carnaval: allowedOrigins = '*' (разрешены все origins)")
-        raw_origins = "*"
+    raw_origins = cardinal.MAIN_CFG.get("Carnaval", "allowedOrigins", fallback="")
+    if raw_origins and raw_origins.strip() == "*" and not is_any_origin_allowed():
+        logger.warning("Carnaval: allowedOrigins = '*' проигнорирован (CARNAVAL_ALLOW_ANY_ORIGIN != 1). Применен строгий allowlist.")
+        raw_origins = ""
     set_allowed_origins(raw_origins)
+    logger.info(f"Carnaval: разрешённые CORS origins: {get_allowed_origins()}")
 
     app = build_app()
 
-    def _run_server(bind_host: str, bind_port: int, is_primary: bool = True):
+    # Определение единого порта: PORT -> CARNAVAL_PORT -> config -> port (по умолчанию 5000)
+    env_port = os.getenv("PORT") or os.getenv("CARNAVAL_PORT")
+    cfg_port = None
+    if hasattr(cardinal, "MAIN_CFG"):
+        try:
+            cfg_port = cardinal.MAIN_CFG.get("Carnaval", "port", fallback=None)
+        except Exception:
+            cfg_port = None
+    effective_port = int(env_port or cfg_port or port or 5000)
+
+    env_host = os.getenv("CARNAVAL_HOST")
+    cfg_host = None
+    if hasattr(cardinal, "MAIN_CFG"):
+        try:
+            cfg_host = cardinal.MAIN_CFG.get("Carnaval", "host", fallback=None)
+        except Exception:
+            cfg_host = None
+    effective_host = env_host or host or cfg_host or "0.0.0.0"
+
+    def _run_server(bind_host: str, bind_port: int):
         try:
             config = uvicorn.Config(
                 app,
@@ -286,21 +357,9 @@ def start(cardinal: "Cardinal", host: str = "0.0.0.0", port: int = 5000) -> None
             logger.info(f"Carnaval: запуск на http://{bind_host}:{bind_port}")
             srv.run()
         except Exception as e:
-            if is_primary:
-                logger.error(f"Carnaval: ошибка запуска на {bind_host}:{bind_port}: {e}")
-            else:
-                logger.debug(f"Carnaval: резервный порт {bind_port} не запущен: {e}")
+            logger.error(f"Carnaval: ошибка запуска на {bind_host}:{bind_port}: {e}")
 
-    # Основной сервер
-    t = threading.Thread(target=_run_server, args=(host, port, True), name=f"Carnaval-{port}", daemon=True)
+    # Сервер строго на одном порту
+    t = threading.Thread(target=_run_server, args=(effective_host, effective_port), name=f"Carnaval-{effective_port}", daemon=True)
     t.start()
-    logger.info(f"Carnaval: основной поток запущен на http://{host}:{port}")
-
-    # Резервный порт: обеспечивает доступность как по порту 5000, так и по 8000
-    fallback_port = 8000 if port == 5000 else 5000
-    try:
-        t_fallback = threading.Thread(target=_run_server, args=(host, fallback_port, False), name=f"Carnaval-{fallback_port}", daemon=True)
-        t_fallback.start()
-        logger.info(f"Carnaval: резервный поток запущен на порту {fallback_port}")
-    except Exception as e:
-        logger.debug(f"Carnaval: резервный поток не создан: {e}")
+    logger.info(f"Carnaval: поток запущен на http://{effective_host}:{effective_port}")
