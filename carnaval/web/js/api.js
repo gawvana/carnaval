@@ -758,3 +758,12 @@ export async function sendChatTemplate(chat_id, template_index, username = null)
 }
 
 
+/**
+ * getSystemVersion - Fetches backend build identity.
+ * Used by the startup version check to detect stale Telegram WebView builds.
+ * Returns: { ok, app_version, git_sha, build_id, build_time, environment, api_contract }
+ * The /api/system/version endpoint sets Cache-Control: no-store, so this always returns fresh data.
+ */
+export async function getSystemVersion() {
+  return await request('GET', '/api/system/version', { allowRelogin: false });
+}

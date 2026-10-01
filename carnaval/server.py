@@ -27,6 +27,7 @@ from carnaval.routers import api_router
 from carnaval.routers.search import router as search_router
 from carnaval.routers.update import router as update_router
 from carnaval.routers.live import router as live_router
+from carnaval.routers.system_info import router as system_info_router
 
 if TYPE_CHECKING:
     from cardinal import Cardinal
@@ -299,6 +300,9 @@ def build_app(allowed_origins: list[str] | None = None, serve_static: bool | Non
     if not any(getattr(r, "original_router", None) is live_router for r in api_router.routes):
         api_router.include_router(live_router, tags=["live"])
     app.include_router(api_router, prefix="/api")
+
+    # System version endpoint (public, no auth, no-store cache)
+    app.include_router(system_info_router)
 
     # Статика Mini App (единый origin)
     serve_static_flag = serve_static if serve_static is not None else True

@@ -3,7 +3,7 @@
  * Vanilla ES-модули, без внешних фреймворков и сборщиков.
  */
 
-import { auth } from './api.js';
+import { auth, getSystemVersion } from './api.js';
 import { tg } from './tg.js';
 import { router } from './router.js';
 import { initLocale, t } from './i18n.js';
@@ -250,3 +250,116 @@ main().catch((err) => {
     `;
   }
 });
+
+// ─── Version Freshness Check ───────────────────────────────────────────────────
+// Runs after startup to detect stale Telegram WebView deployments.
+// Uses window.CARNAVAL_BUILD (injected by build-vercel.mjs) vs /api/system/version.
+// Shows a user-triggered update banner — NO infinite reload loops.
+
+async function checkVersionFreshness() {
+  try {
+    const frontendBuild = window.CARNAVAL_BUILD || {};
+    const frontendSha = frontendBuild.gitSha || 'unknown';
+    const frontendContract = frontendBuild.apiContract || 0;
+
+    // Use api.js getSystemVersion (not raw fetch API) to comply with project policy
+    let data;
+    try {
+      data = await getSystemVersion();
+    } catch (_e) {
+      return; // Backend unavailable — don't block app
+    }
+    if (!data || !data.ok) return;
+
+    const backendSha = data.git_sha || 'unknown';
+    const backendContract = data.api_contract || 0;
+
+    // ── API contract mismatch = incompatible (show critical banner) ──
+    if (frontendContract > 0 && backendContract > 0 && frontendContract !== backendContract) {
+      _showVersionBanner('incompatible', frontendSha, backendSha);
+      return;
+    }
+
+    // ── SHA mismatch = stale frontend ──
+    // Only show once per session (sessionStorage prevents loop after user-triggered reload)
+    const lastSeenBuild = sessionStorage.getItem('carnaval_last_seen_build');
+    if (
+      frontendSha !== 'unknown' &&
+      backendSha !== 'unknown' &&
+      frontendSha !== backendSha &&
+      lastSeenBuild !== backendSha
+    ) {
+      sessionStorage.setItem('carnaval_last_seen_build', backendSha);
+      _showVersionBanner('update_available', frontendSha, backendSha);
+      return;
+    }
+
+    // Up to date — record backend SHA for next session comparison
+    if (backendSha !== 'unknown') {
+      sessionStorage.setItem('carnaval_last_seen_build', backendSha);
+    }
+  } catch (e) {
+    // Version check must never crash the app
+    console.debug('[Version] Check failed silently:', e);
+  }
+}
+
+function _showVersionBanner(state, frontendSha, backendSha) {
+  if (document.getElementById('version-banner')) return; // Already shown this session
+
+  const isIncompatible = state === 'incompatible';
+  const banner = document.createElement('div');
+  banner.id = 'version-banner';
+  banner.setAttribute('role', 'alert');
+  banner.style.cssText = [
+    'position:fixed;top:0;left:0;right:0;z-index:99999',
+    `background:${isIncompatible ? 'var(--err,#c0392b)' : 'var(--primary,#2563eb)'}`,
+    'color:#fff;padding:10px 16px',
+    'display:flex;align-items:center;justify-content:space-between',
+    'font-size:13px;gap:8px',
+    'border-bottom:1px solid rgba(255,255,255,0.15)',
+    'box-shadow:0 2px 12px rgba(0,0,0,0.25)',
+  ].join(';');
+
+  const msg = isIncompatible
+    ? `Несовместимая версия (frontend: ${frontendSha}, backend: ${backendSha})`
+    : `Доступно обновление Carnaval (${backendSha})`;
+
+  banner.innerHTML = `
+    <span>${msg}</span>
+    <button id="version-banner-btn" style="
+      background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);
+      color:#fff;padding:4px 14px;border-radius:8px;cursor:pointer;
+      font-size:12px;white-space:nowrap;font-family:inherit;
+    ">${isIncompatible ? 'Перезагрузить' : 'Обновить'}</button>
+  `;
+
+  document.body.prepend(banner);
+
+  document.getElementById('version-banner-btn').addEventListener('click', () => {
+    _safeReload();
+  }, { once: true });
+}
+
+function _safeReload() {
+  // Cleanly shut down open UI state before reload
+  try {
+    const sheet = document.getElementById('sheet');
+    if (sheet) sheet.style.display = 'none';
+    if (window.__sseSource) { window.__sseSource.close(); window.__sseSource = null; }
+  } catch (_e) {}
+  // Mark that we initiated the reload — prevents showing banner again immediately after
+  sessionStorage.setItem('carnaval_reload_initiated', '1');
+  window.location.reload(true);
+}
+
+// Post-reload loop protection: after a user-triggered reload, wait before re-checking
+if (sessionStorage.getItem('carnaval_reload_initiated') === '1') {
+  sessionStorage.removeItem('carnaval_reload_initiated');
+  // Give 5s grace — if still stale after reload, show banner but don't auto-reload again
+  setTimeout(() => checkVersionFreshness(), 5000);
+} else {
+  // Normal startup: run version check 3s after app init (non-blocking)
+  setTimeout(() => checkVersionFreshness(), 3000);
+}
+
