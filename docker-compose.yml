@@ -5,8 +5,14 @@ services:
     restart: unless-stopped
     stdin_open: true
     tty: true
+    env_file:
+      - .env
+    ports:
+      - "5000:5000"
     volumes:
+      - ./data:/app/data
       - ./configs:/app/configs
       - ./logs:/app/logs
       - ./storage:/app/storage
       - ./plugins:/app/plugins
+

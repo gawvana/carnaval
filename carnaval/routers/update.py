@@ -1,15 +1,15 @@
 """
 carnaval/routers/update.py — API эндпоинты системы обновлений и управления системными режимами:
-- /api/updates/current
-- /api/updates/manifest
-- /api/updates/check
-- /api/updates/download
+- /api/updates/current (Защищен: require_panel_unlocked)
+- /api/updates/manifest (Защищен: require_panel_unlocked)
+- /api/updates/check (Защищен: require_panel_unlocked)
+- /api/updates/download (Защищен: require_panel_unlocked)
 - /api/updates/install (Защищен: require_panel_unlocked, require_user)
-- /api/updates/rollback (Защищен: require_panel_unlocked)
-- /api/updates/status
-- /api/system/mode
-- /api/system/maintenance (Защищен: require_panel_unlocked)
-- /api/system/safe-mode (Защищен: require_panel_unlocked)
+- /api/updates/rollback (Защищен: require_owner)
+- /api/updates/status (Защищен: require_panel_unlocked)
+- /api/system/mode (Защищен: require_admin)
+- /api/system/maintenance (Защищен: require_owner)
+- /api/system/safe-mode (Защищен: require_owner)
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from carnaval.deps import require_panel_unlocked, require_user
+from carnaval.deps import require_admin, require_owner, require_panel_unlocked, require_telegram_auth, require_user
 from carnaval.services import system_mode
 from carnaval.services import update as update_svc
 
@@ -51,8 +51,6 @@ class InstallUpdateRequest(BaseModel):
     version: Optional[str] = None
     manifest: Optional[dict[str, Any]] = None
     artifact_bytes_b64: Optional[str] = None
-    fail_on_migration: bool = False
-    fail_on_health: bool = False
 
 
 class RollbackUpdateRequest(BaseModel):
@@ -73,18 +71,20 @@ class SafeModeRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.get("/updates/current")
-@router.get("/api/updates/current")
-async def get_current_versions(request: Request) -> JSONResponse:
+async def get_current_versions(
+    request: Request,
+    session: dict = Depends(require_telegram_auth),
+) -> JSONResponse:
     """Возвращает информацию о текущих версиях компонентов, активном канале и системных режимах."""
     versions = update_svc.get_current_versions()
     return JSONResponse(versions)
 
 
 @router.get("/updates/manifest")
-@router.get("/api/updates/manifest")
 async def get_update_manifest(
     request: Request,
     channel: Optional[str] = Query(None, description="Канал обновления (stable, beta, nightly)"),
+    session: dict = Depends(require_telegram_auth),
 ) -> JSONResponse:
     """Возвращает манифест обновления для указанного или активного канала."""
     ch = channel or update_svc.get_active_channel()
@@ -93,10 +93,10 @@ async def get_update_manifest(
 
 
 @router.post("/updates/check")
-@router.post("/api/updates/check")
 async def check_updates(
     request: Request,
     body: Optional[CheckUpdatesRequest] = None,
+    session: dict = Depends(require_telegram_auth),
 ) -> JSONResponse:
     """
     Проверяет наличие доступных обновлений и возвращает унифицированную схему:
@@ -111,10 +111,10 @@ async def check_updates(
 
 
 @router.post("/updates/download")
-@router.post("/api/updates/download")
 async def download_update(
     request: Request,
     body: Optional[DownloadUpdateRequest] = None,
+    session: dict = Depends(require_panel_unlocked),
 ) -> JSONResponse:
     """Загружает/стадирует пакет обновления (DOWNLOADING -> VERIFYING -> READY)."""
     manifest = body.manifest if body else None
@@ -136,7 +136,6 @@ async def download_update(
 
 
 @router.post("/updates/install")
-@router.post("/api/updates/install")
 async def install_update(
     request: Request,
     body: Optional[InstallUpdateRequest] = None,
@@ -146,9 +145,9 @@ async def install_update(
     """
     Устанавливает обновление атомарно:
     1. Pre-update бэкап
-    2. Проверка SHA-256 хэша и размера
+    2. Проверка SHA-256 хэша, размера и Ed25519 подписи
     3. Распаковка в staging и валидация архива
-    4. Выполнение миграций схемы (V1 -> V2 -> V3)
+    4. Выполнение миграций схемы
     5. Атомарная замена файлов приложения
     6. Перезапуск рантайма
     7. Health check и автоматический откат при ошибках
@@ -157,8 +156,6 @@ async def install_update(
     """
     manifest = body.manifest if body else None
     version = body.version if body else None
-    fail_on_mig = body.fail_on_migration if body else False
-    fail_on_health = body.fail_on_health if body else False
     artifact_bytes = None
 
     if body and body.artifact_bytes_b64:
@@ -167,14 +164,13 @@ async def install_update(
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid base64 in artifact_bytes_b64")
 
-
     success, message, details = await asyncio.get_event_loop().run_in_executor(
         None,
         update_svc.install_update,
         manifest,
         artifact_bytes,
-        fail_on_mig,
-        fail_on_health,
+        False,  # fail_on_mig
+        False,  # fail_on_health
         version,
     )
 
@@ -195,7 +191,6 @@ async def install_update(
 
 
 @router.post("/updates/rollback")
-@router.post("/api/updates/rollback")
 async def rollback_update(
     request: Request,
     body: Optional[RollbackUpdateRequest] = None,
@@ -215,8 +210,10 @@ async def rollback_update(
 
 
 @router.get("/updates/status")
-@router.get("/api/updates/status")
-async def get_update_status(request: Request) -> JSONResponse:
+async def get_update_status(
+    request: Request,
+    session: dict = Depends(require_telegram_auth),
+) -> JSONResponse:
     """Возвращает текущее состояние и прогресс процесса обновления."""
     return JSONResponse(update_svc.get_update_status())
 
@@ -226,8 +223,10 @@ async def get_update_status(request: Request) -> JSONResponse:
 # ---------------------------------------------------------------------------
 
 @router.get("/system/mode")
-@router.get("/api/system/mode")
-async def get_system_mode(request: Request) -> JSONResponse:
+async def get_system_mode(
+    request: Request,
+    session: dict = Depends(require_telegram_auth),
+) -> JSONResponse:
     """Возвращает текущие статусы safe mode и maintenance mode."""
     return JSONResponse({
         "safe_mode": system_mode.is_safe_mode(),
@@ -237,7 +236,6 @@ async def get_system_mode(request: Request) -> JSONResponse:
 
 
 @router.post("/system/maintenance")
-@router.post("/api/system/maintenance")
 async def toggle_maintenance_mode(
     request: Request,
     body: MaintenanceModeRequest,
@@ -256,7 +254,6 @@ async def toggle_maintenance_mode(
 
 
 @router.post("/system/safe-mode")
-@router.post("/api/system/safe-mode")
 async def toggle_safe_mode(
     request: Request,
     body: SafeModeRequest,

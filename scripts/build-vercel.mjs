@@ -36,11 +36,21 @@ const gitSha = (() => {
 
 const buildId = process.env.VERCEL_DEPLOYMENT_ID || gitSha;
 const buildTime = new Date().toISOString();
-const appVersion = process.env.CARNAVAL_APP_VERSION || '2.1.0';
-const environment = process.env.VERCEL_ENV || process.env.CARNAVAL_ENV || 'production';
-const apiContract = 5;
 
-console.log(`[Vercel Build] Build identity: version=${appVersion} gitSha=${gitSha} buildId=${buildId} env=${environment}`);
+let appVersion = process.env.CARNAVAL_APP_VERSION;
+let apiContract = 5;
+try {
+  const vContent = readFileSync(join(ROOT_DIR, 'carnaval', 'version.py'), 'utf-8');
+  const vMatch = vContent.match(/APP_VERSION\s*(?::\s*str)?\s*=\s*["']([^"']+)["']/);
+  if (vMatch) appVersion = vMatch[1];
+  const cMatch = vContent.match(/API_CONTRACT\s*(?::\s*int)?\s*=\s*(\d+)/);
+  if (cMatch) apiContract = parseInt(cMatch[1], 10);
+} catch {}
+appVersion = appVersion || '2.1.0';
+
+const environment = process.env.VERCEL_ENV || process.env.CARNAVAL_ENV || 'production';
+
+console.log(`[Vercel Build] Build identity: version=${appVersion} gitSha=${gitSha} buildId=${buildId} env=${environment} contract=${apiContract}`);
 
 // ─── 1. Audit environment variables to prevent secret leakage ─────────────────
 const FORBIDDEN_SECRET_KEYS = [

@@ -86,24 +86,43 @@ def require_telegram_auth(request: Request) -> dict:
                     detail={"error": "csrf_detected", "message": "Недействительный CSRF токен"}
                 )
 
-    # Проверка отзыва доступа через authorized_users Cardinal
+    # Проверка отзыва доступа через authorized_users Cardinal (Fail-Closed)
     try:
-        cardinal = get_cardinal()
         owner_id = get_state("owner_telegram_id")
+        env_owner = (
+            os.getenv("TG_OWNER_ID", "").strip()
+            or os.getenv("OWNER_TELEGRAM_ID", "").strip()
+            or os.getenv("OWNER_ID", "").strip()
+        )
         uid = session["telegram_user_id"]
-        if owner_id and int(owner_id) == uid:
-            pass
-        elif hasattr(cardinal, "telegram") and cardinal.telegram and hasattr(cardinal.telegram, "authorized_users") and cardinal.telegram.authorized_users:
-            auth_users = cardinal.telegram.authorized_users
-            if uid not in auth_users and str(uid) not in auth_users:
-                raise HTTPException(
-                    status_code=403,
-                    detail={"error": "access_revoked", "message": "Доступ отозван"}
-                )
+        is_owner = (owner_id and int(owner_id) == uid) or (env_owner and str(uid) == env_owner) or (session.get("role") == "owner")
+
+        if not is_owner:
+            cardinal = get_cardinal()
+            tg = getattr(cardinal, "telegram", None) if cardinal else None
+            # Если бот активен и ведёт список authorized_users
+            if tg and hasattr(tg, "authorized_users") and isinstance(tg.authorized_users, (dict, list, set)):
+                if uid not in tg.authorized_users and str(uid) not in tg.authorized_users:
+                    raise HTTPException(
+                        status_code=403,
+                        detail={"error": "access_revoked", "message": "Доступ отозван: пользователь удален из authorized_users"}
+                    )
+            else:
+                from tg_bot.utils import load_authorized_users
+                auth_users = load_authorized_users()
+                if auth_users and (uid not in auth_users and str(uid) not in auth_users):
+                    raise HTTPException(
+                        status_code=403,
+                        detail={"error": "access_revoked", "message": "Доступ отозван: пользователь не в списке авторизованных"}
+                    )
     except HTTPException:
         raise
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Carnaval.Deps: ошибка проверки авторизации: {e}")
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "auth_verification_failed", "message": "Ошибка проверки прав доступа"}
+        )
 
     request.state.session = session
     request.state.session_token = token
@@ -112,43 +131,76 @@ def require_telegram_auth(request: Request) -> dict:
 
 def require_owner(request: Request, session: dict = Depends(require_telegram_auth)) -> dict:
     """
-    Зависимость: проверяет, что пользователь является владельцем системы или авторизованным администратором.
+    Зависимость: строго только владелец системы (role == 'owner').
+    Администраторам (admin) доступ к функциям владельца запрещен.
+    """
+    current_uid = session.get("telegram_user_id")
+
+    env_owner = (
+        os.getenv("TG_OWNER_ID", "").strip()
+        or os.getenv("OWNER_TELEGRAM_ID", "").strip()
+        or os.getenv("OWNER_ID", "").strip()
+    )
+    if env_owner and str(current_uid) == env_owner:
+        return session
+
+    owner_id_str = get_state("owner_telegram_id")
+    if owner_id_str and int(owner_id_str) == current_uid:
+        return session
+
+    if session.get("role") == "owner":
+        return session
+
+    state = get_state("state", "UNINITIALIZED")
+    if state == "UNINITIALIZED" and not owner_id_str and not env_owner:
+        return session
+
+    raise HTTPException(
+        status_code=403,
+        detail={"error": "forbidden", "message": "Действие доступно только владельцу системы (owner)"}
+    )
+
+
+def require_admin(request: Request, session: dict = Depends(require_telegram_auth)) -> dict:
+    """
+    Зависимость: разрешено администраторам и владельцам (role in ('owner', 'admin')).
     """
     if session.get("role") in ("owner", "admin"):
         return session
 
+    current_uid = session.get("telegram_user_id")
     owner_id_str = get_state("owner_telegram_id")
-    current_uid = session["telegram_user_id"]
-
-    # Во время первого запуска до claim владельца разрешаем доступ
-    state = get_state("state", "UNINITIALIZED")
-    if state == "UNINITIALIZED" or not owner_id_str:
+    env_owner = (
+        os.getenv("TG_OWNER_ID", "").strip()
+        or os.getenv("OWNER_TELEGRAM_ID", "").strip()
+        or os.getenv("OWNER_ID", "").strip()
+    )
+    if (env_owner and str(current_uid) == env_owner) or (owner_id_str and int(owner_id_str) == current_uid):
         return session
 
-    env_owner = os.getenv("TG_OWNER_ID", "").strip() or os.getenv("OWNER_TELEGRAM_ID", "").strip()
-    if env_owner and str(current_uid) == env_owner:
-        return session
-
-    if owner_id_str and int(owner_id_str) == current_uid:
-        return session
-
-    # Разрешаем доступ администраторам из authorized_users Cardinal
     try:
+        from tg_bot.utils import load_authorized_users
+        auth_users = load_authorized_users()
         cardinal = get_cardinal()
-        tg = getattr(cardinal, "telegram", None)
-        if tg and hasattr(tg, "authorized_users") and tg.authorized_users:
-            if current_uid in tg.authorized_users or str(current_uid) in tg.authorized_users:
-                return session
+        if cardinal and getattr(cardinal, "telegram", None) and hasattr(cardinal.telegram, "authorized_users"):
+            if cardinal.telegram.authorized_users:
+                auth_users.update(cardinal.telegram.authorized_users)
+        if current_uid in auth_users or str(current_uid) in auth_users:
+            return session
     except Exception:
         pass
 
+    state = get_state("state", "UNINITIALIZED")
+    if state == "UNINITIALIZED" and not owner_id_str and not env_owner:
+        return session
+
     raise HTTPException(
         status_code=403,
-        detail={"error": "forbidden", "message": "Действие доступно только владельцу системы или администратору"}
+        detail={"error": "forbidden", "message": "Действие доступно только администратору или владельцу"}
     )
 
 
-def require_panel_unlocked(request: Request, session: dict = Depends(require_owner)) -> dict:
+def require_panel_unlocked(request: Request, session: dict = Depends(require_admin)) -> dict:
     """
     Зависимость 2-го уровня: требует разблокировки панели управления паролем.
     """

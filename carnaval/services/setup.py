@@ -10,6 +10,7 @@ carnaval/services/setup.py — атомарный сервис первонач�
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Optional, Tuple
 
@@ -51,6 +52,14 @@ def claim_ownership(telegram_user_id: int, first_name: str = "", username: str =
     Если владелец уже зарегистрирован — немедленно отклоняет запрос.
     """
     now = int(time.time())
+
+    env_owner = (
+        os.getenv("TG_OWNER_ID", "").strip()
+        or os.getenv("OWNER_TELEGRAM_ID", "").strip()
+        or os.getenv("OWNER_ID", "").strip()
+    )
+    if env_owner and str(telegram_user_id) != env_owner:
+        return False, "Регистрация отклонена: ваш Telegram ID не совпадает с назначенным TG_OWNER_ID сервера"
 
     try:
         with transaction() as conn:

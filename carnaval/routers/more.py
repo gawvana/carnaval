@@ -508,7 +508,6 @@ async def get_authorized_users(request: Request, user_id: int = Depends(require_
 async def add_authorized_user_route(
     body: AuthorizedUserAdd,
     request: Request,
-    _owner: dict = Depends(require_owner),
     session: dict = Depends(require_panel_unlocked),
 ):
     """

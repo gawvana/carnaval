@@ -156,9 +156,9 @@ def strip_leading_emoji_for_button(text: str) -> tuple[str, Optional[str]]:
         normalized = raw_emoji.replace("\ufe0f", "")
         eid = PREMIUM.get(normalized)
 
-    # Если всё равно нет точного совпадения — берём ближайший общий инфо/действие
+    # Если нет точного совпадения в PREMIUM — сохраняем эмодзи в тексте кнопки
     if not eid:
-        eid = "6028435952299413210"  # Инфо по умолчанию
+        return cleaned_text, None
 
     return clean_text, eid
 
@@ -213,7 +213,8 @@ def patch_telebot_for_premium_emojis() -> None:
     1. InlineKeyboardButton: извлечение ведущего эмодзи в icon_custom_emoji_id.
     2. InlineKeyboardButton.to_dict(): передача icon_custom_emoji_id в Telegram Bot API.
     3. TeleBot.send_message / edit_message_text: замена эмодзи на <tg-emoji>
-       и fallback при ApiTelegramException.
+       и fallback при ApiTelegramException (без повторов при 429 и 403).
+    4. TeleBot.send_photo / send_document / edit_message_caption: поддержка эмодзи в подписях.
     """
     global _telebot_patched
     if _telebot_patched:
@@ -255,7 +256,8 @@ def patch_telebot_for_premium_emojis() -> None:
         try:
             return orig_send_message(self, chat_id, formatted_text, *args, **kwargs)
         except ApiTelegramException as e:
-            # Fallback: если Telegram отклонил кастомные эмодзи — повторяем с исходным текстом
+            if getattr(e, "error_code", None) in (429, 403):
+                raise
             logger.debug(f"TeleBot send_message fallback: {e}")
             if formatted_text != text:
                 return orig_send_message(self, chat_id, text, *args, **kwargs)
@@ -269,6 +271,8 @@ def patch_telebot_for_premium_emojis() -> None:
         try:
             return orig_edit_message(self, formatted_text, *args, **kwargs)
         except ApiTelegramException as e:
+            if getattr(e, "error_code", None) in (429, 403):
+                raise
             logger.debug(f"TeleBot edit_message fallback: {e}")
             if formatted_text != text:
                 return orig_edit_message(self, text, *args, **kwargs)
@@ -276,6 +280,62 @@ def patch_telebot_for_premium_emojis() -> None:
 
     telebot.TeleBot.send_message = patched_send_message
     telebot.TeleBot.edit_message_text = patched_edit_message_text
+
+    # --- 3. Патч отправки медиа (фото, документы, подписи) ---
+    orig_send_photo = getattr(telebot.TeleBot, "send_photo", None)
+    orig_send_document = getattr(telebot.TeleBot, "send_document", None)
+    orig_edit_caption = getattr(telebot.TeleBot, "edit_message_caption", None)
+
+    if orig_send_photo:
+        def patched_send_photo(self, chat_id, photo, *args, **kwargs):
+            parse_mode = kwargs.get("parse_mode") or getattr(self, "parse_mode", None) or "HTML"
+            caption = kwargs.get("caption")
+            if caption and parse_mode == "HTML" and isinstance(caption, str):
+                kwargs["caption"] = replace_emojis_with_tg_emoji(caption)
+            try:
+                return orig_send_photo(self, chat_id, photo, *args, **kwargs)
+            except ApiTelegramException as e:
+                if getattr(e, "error_code", None) in (429, 403):
+                    raise
+                if caption and kwargs.get("caption") != caption:
+                    kwargs["caption"] = caption
+                    return orig_send_photo(self, chat_id, photo, *args, **kwargs)
+                raise
+        telebot.TeleBot.send_photo = patched_send_photo
+
+    if orig_send_document:
+        def patched_send_document(self, chat_id, document, *args, **kwargs):
+            parse_mode = kwargs.get("parse_mode") or getattr(self, "parse_mode", None) or "HTML"
+            caption = kwargs.get("caption")
+            if caption and parse_mode == "HTML" and isinstance(caption, str):
+                kwargs["caption"] = replace_emojis_with_tg_emoji(caption)
+            try:
+                return orig_send_document(self, chat_id, document, *args, **kwargs)
+            except ApiTelegramException as e:
+                if getattr(e, "error_code", None) in (429, 403):
+                    raise
+                if caption and kwargs.get("caption") != caption:
+                    kwargs["caption"] = caption
+                    return orig_send_document(self, chat_id, document, *args, **kwargs)
+                raise
+        telebot.TeleBot.send_document = patched_send_document
+
+    if orig_edit_caption:
+        def patched_edit_caption(self, *args, **kwargs):
+            parse_mode = kwargs.get("parse_mode") or getattr(self, "parse_mode", None) or "HTML"
+            caption = kwargs.get("caption")
+            if caption and parse_mode == "HTML" and isinstance(caption, str):
+                kwargs["caption"] = replace_emojis_with_tg_emoji(caption)
+            try:
+                return orig_edit_caption(self, *args, **kwargs)
+            except ApiTelegramException as e:
+                if getattr(e, "error_code", None) in (429, 403):
+                    raise
+                if caption and kwargs.get("caption") != caption:
+                    kwargs["caption"] = caption
+                    return orig_edit_caption(self, *args, **kwargs)
+                raise
+        telebot.TeleBot.edit_message_caption = patched_edit_caption
 
     _telebot_patched = True
     logger.info("Carnaval: TeleBot успешно пропатчен для поддержки премиум-эмодзи")

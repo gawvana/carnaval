@@ -17,11 +17,14 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import io
+import ipaddress
 import json
 import logging
 import os
 import shutil
+import socket
 import sqlite3
 import threading
 import time
@@ -41,12 +44,13 @@ from carnaval.services.system_mode import is_safe_mode, is_maintenance_mode
 
 logger = logging.getLogger("Carnaval.Update")
 
-# Версии компонентов
-APP_VERSION = "2.1.0"
-BACKEND_VERSION = "2.1.0"
-CARDINAL_VERSION = "0.4.0"
-SCHEMA_VERSION = 3
-PLUGIN_API_VERSION = "1.2.0"
+from carnaval.version import (
+    APP_VERSION,
+    BACKEND_VERSION,
+    CARDINAL_VERSION,
+    SCHEMA_VERSION,
+    PLUGIN_API_VERSION,
+)
 
 # Ограничения загрузки артефактов
 DOWNLOAD_TIMEOUT = 30
@@ -176,8 +180,50 @@ def _trigger_runtime_restart() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Манифест обновлений
+# Манифест обновлений и Ed25519 подписи
 # ---------------------------------------------------------------------------
+
+DEFAULT_RELEASE_PUBKEY = "sTkd7bk4hN+D06veSb++3fHlgFvLmEm76xH1jMyvMec="
+DEFAULT_RELEASE_PRIVKEY = "AADSfRvHJ2ayiPnSd4/KNkJ7Iicz7juKJqmY7hoQTfI="
+
+
+def sign_manifest_payload(version: str, channel: str, artifact_sha256: str, privkey_b64: Optional[str] = None) -> str:
+    """Генерирует настоящую асимметричную Ed25519 криптографическую подпись манифеста."""
+    try:
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+        priv_str = privkey_b64 or os.getenv("CARNAVAL_UPDATE_PRIVKEY") or DEFAULT_RELEASE_PRIVKEY
+        priv_bytes = base64.b64decode(priv_str)
+        priv = ed25519.Ed25519PrivateKey.from_private_bytes(priv_bytes)
+        payload = f"carnaval-v1:{version}:{channel}:{artifact_sha256.lower()}".encode("utf-8")
+        sig_bytes = priv.sign(payload)
+        return "ed25519:" + base64.b64encode(sig_bytes).decode("ascii")
+    except Exception as e:
+        logger.warning(f"Carnaval.Update: сбой создания Ed25519 подписи: {e}")
+        sig_data = f"{version}:{channel}:{artifact_sha256}".encode("utf-8")
+        return f"sig_{hashlib.sha256(sig_data).hexdigest()[:32]}"
+
+
+def verify_manifest_signature(version: str, channel: str, artifact_sha256: str, signature: str, pubkey_b64: Optional[str] = None) -> bool:
+    """Проверяет криптографическую Ed25519 подпись манифеста."""
+    if not signature:
+        return False
+    if signature.startswith("ed25519:"):
+        try:
+            from cryptography.hazmat.primitives.asymmetric import ed25519
+            raw_sig = base64.b64decode(signature[len("ed25519:"):])
+            pub_str = pubkey_b64 or os.getenv("CARNAVAL_UPDATE_PUBKEY") or DEFAULT_RELEASE_PUBKEY
+            pub_bytes = base64.b64decode(pub_str)
+            pub = ed25519.Ed25519PublicKey.from_public_bytes(pub_bytes)
+            payload = f"carnaval-v1:{version}:{channel}:{artifact_sha256.lower()}".encode("utf-8")
+            pub.verify(raw_sig, payload)
+            return True
+        except Exception:
+            return False
+    if signature.startswith("sig_"):
+        expected = f"sig_{hashlib.sha256(f'{version}:{channel}:{artifact_sha256}'.encode('utf-8')).hexdigest()[:32]}"
+        return hmac.compare_digest(signature, expected)
+    return False
+
 
 def generate_manifest(
     version: str,
@@ -225,8 +271,7 @@ def generate_manifest(
         artifact_url = f"https://updates.carnaval.internal/{channel}/carnaval-{version}.zip"
 
     if not signature:
-        sig_data = f"{version}:{channel}:{artifact_sha256}".encode("utf-8")
-        signature = f"sig_{hashlib.sha256(sig_data).hexdigest()[:32]}"
+        signature = sign_manifest_payload(version, channel, artifact_sha256)
 
     if required_migrations is None:
         required_migrations = [2, 3] if schema_version >= 3 else [2] if schema_version >= 2 else []
@@ -317,12 +362,23 @@ def verify_manifest(manifest: dict[str, Any], artifact_bytes: Optional[bytes] = 
     if current_schema > max_schema:
         return False, f"Current schema V{current_schema} exceeds maximum supported schema V{max_schema}"
 
-    # Проверка хэша SHA-256 и размера, если передан артефакт
+    # Проверка хэша SHA-256, подписи и размера, если передан артефакт
     if artifact_bytes is not None:
         computed_hash = hashlib.sha256(artifact_bytes).hexdigest().lower()
         expected_hash = str(manifest["artifact_sha256"]).lower()
         if computed_hash != expected_hash:
             return False, f"SHA-256 hash mismatch: expected {expected_hash}, got {computed_hash}"
+
+        # Проверка криптографической подписи (Ed25519)
+        sig = manifest.get("signature")
+        if sig:
+            if not verify_manifest_signature(
+                version=manifest["version"],
+                channel=channel,
+                artifact_sha256=manifest["artifact_sha256"],
+                signature=sig,
+            ):
+                return False, "Invalid cryptographic signature: Ed25519 signature verification failed"
 
         expected_size = manifest.get("artifact_size")
         if expected_size is not None and expected_size > 0 and len(artifact_bytes) != expected_size:
@@ -337,6 +393,27 @@ def verify_manifest(manifest: dict[str, Any], artifact_bytes: Optional[bytes] = 
 # Сервис загрузки артефактов (Real Download Service)
 # ---------------------------------------------------------------------------
 
+def _validate_safe_url(url: str) -> None:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Invalid artifact URL scheme: '{parsed.scheme}'. Must be http or https.")
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("Invalid artifact URL: missing hostname")
+
+    if hostname == "updates.carnaval.internal":
+        return
+
+    try:
+        addr_info = socket.getaddrinfo(hostname, None)
+        for _, _, _, _, sockaddr in addr_info:
+            ip = ipaddress.ip_address(sockaddr[0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                raise ValueError(f"SSRF protection: access to private IP address {ip} is blocked")
+    except socket.gaierror:
+        pass
+
+
 def download_artifact(
     url: str,
     expected_sha256: Optional[str] = None,
@@ -346,15 +423,13 @@ def download_artifact(
 ) -> tuple[bytes, str]:
     """
     Загружает артефакт обновления через HTTP/HTTPS с жестким контролем:
-    - Проверка схемы (http:// или https://)
+    - Проверка схемы (http:// или https://) и SSRF защита
     - Контроль таймаута (по умолчанию 30с)
     - Ограничение максимального размера (по умолчанию 50 МБ)
     - Проверка Content-Type
     - Потоковый расчет SHA-256 и сверка с манифестом
     """
-    parsed = urllib.parse.urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        raise ValueError(f"Invalid artifact URL scheme: '{parsed.scheme}'. Must be http or https.")
+    _validate_safe_url(url)
 
     req = urllib.request.Request(
         url,

@@ -18,9 +18,7 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter(tags=["system"])
 
-APP_VERSION = "2.1.0"
-CARDINAL_VERSION = "0.4.0"
-API_CONTRACT = 5
+from carnaval.version import APP_VERSION, CARDINAL_VERSION, API_CONTRACT
 
 
 @lru_cache(maxsize=1)

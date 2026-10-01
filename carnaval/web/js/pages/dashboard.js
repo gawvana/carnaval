@@ -22,6 +22,7 @@ export async function renderDashboard(wrap) {
     data = await getDashboard();
   } catch (e) {
     wrap.innerHTML = renderError(e.message);
+    wrap.querySelector('#dashboard-retry-btn')?.addEventListener('click', () => renderDashboard(wrap));
     return;
   }
 
@@ -254,8 +255,8 @@ function renderError(msg) {
     <div class="nav glass rv in"><b>Carnaval</b></div>
     <div class="empty" style="padding-top: 140px">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
-      <p>Не удалось загрузить данные<br><small style="color:var(--err)">${msg}</small></p>
-      <button class="btn press" onclick="location.reload()" style="margin-top:16px; max-width:180px">Повторить</button>
+      <p>Не удалось загрузить данные<br><small style="color:var(--err)">${escapeHtml(msg)}</small></p>
+      <button id="dashboard-retry-btn" class="btn press" style="margin-top:16px; max-width:180px">Повторить</button>
     </div>
   `;
 }

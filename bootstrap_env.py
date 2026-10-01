@@ -95,19 +95,14 @@ def bootstrap() -> bool:
         or ""
     ).strip()
     if not tg_password:
-        tg_password = "Cardinal2026!"
-        logger.warning(f"BootstrapEnv: TG_PANEL_PASSWORD не указан. Установлен пароль по умолчанию: {tg_password}")
+        tg_password = secrets.token_urlsafe(24)
+        logger.warning(
+            "BootstrapEnv: TG_PANEL_PASSWORD не указан в переменных окружения. "
+            "Сгенерирован случайный пароль для Telegram ПУ. "
+            "Рекомендуется задать постоянный пароль через переменную окружения TG_PANEL_PASSWORD."
+        )
     
     secret_hash = hash_password(tg_password)
-
-    os.makedirs("storage/cache", exist_ok=True)
-    with open("storage/cache/tg_password.txt", "w", encoding="utf-8") as f:
-        f.write(tg_password)
-
-    print("\n" + "=" * 60, flush=True)
-    print(f"[CARNAVAL] СЕКРЕТНЫЙ ПАРОЛЬ TELEGRAM БОТА: {tg_password}", flush=True)
-    print("Отправьте этот пароль боту в Telegram для авторизации администратора.", flush=True)
-    print("=" * 60 + "\n", flush=True)
 
     port = os.getenv("PORT") or os.getenv("CARNAVAL_PORT", "5000")
     host = os.getenv("CARNAVAL_HOST", "0.0.0.0")
@@ -307,7 +302,6 @@ def _sync_existing_config(config_path: str) -> bool:
             or os.getenv("TG_PASSWORD")
             or ""
         ).strip()
-        pass_file = "storage/cache/tg_password.txt"
         from Utils.cardinal_tools import hash_password, check_password
 
         if tg_pass_env:
@@ -317,39 +311,39 @@ def _sync_existing_config(config_path: str) -> bool:
             if not cur_hash or not check_password(tg_pass_env, cur_hash):
                 cfg.set("Telegram", "secretKeyHash", hash_password(tg_pass_env))
                 changed = True
-                os.makedirs("storage/cache", exist_ok=True)
-                with open(pass_file, "w", encoding="utf-8") as pf:
-                    pf.write(tg_pass_env)
-                print("\n" + "=" * 60, flush=True)
-                print(f"[CARNAVAL] ПАРОЛЬ TELEGRAM БОТА ОБНОВЛЕН ИЗ ENV: {tg_pass_env}", flush=True)
-                print("=" * 60 + "\n", flush=True)
-                logger.warning(f"BootstrapEnv: пароль Telegram бота обновлен из переменной окружения.")
-        else:
-            # Если пароль не был сохранен или неизвестен, либо запрошен сброс
-            if not os.path.exists(pass_file) or os.getenv("RESET_TG_PASSWORD", "0").strip() == "1":
-                if not cfg.has_section("Telegram"):
-                    cfg.add_section("Telegram")
-                default_pass = "Cardinal2026!"
-                cfg.set("Telegram", "secretKeyHash", hash_password(default_pass))
-                changed = True
-                os.makedirs("storage/cache", exist_ok=True)
-                with open(pass_file, "w", encoding="utf-8") as pf:
-                    pf.write(default_pass)
-                print("\n" + "=" * 60, flush=True)
-                print(f"[CARNAVAL] СЕКРЕТНЫЙ ПАРОЛЬ TELEGRAM БОТА: {default_pass}", flush=True)
-                print("Отправьте этот пароль боту в Telegram для авторизации администратора.", flush=True)
-                print("=" * 60 + "\n", flush=True)
-                logger.warning(f"BootstrapEnv: установлен пароль Telegram бота по умолчанию: {default_pass}")
+                logger.info("BootstrapEnv: пароль Telegram бота обновлен из переменной окружения.")
+        elif os.getenv("RESET_TG_PASSWORD", "0").strip() == "1":
+            new_pass = secrets.token_urlsafe(24)
+            if not cfg.has_section("Telegram"):
+                cfg.add_section("Telegram")
+            cfg.set("Telegram", "secretKeyHash", hash_password(new_pass))
+            changed = True
+            logger.warning("BootstrapEnv: сброшен пароль Telegram бота по запросу RESET_TG_PASSWORD=1.")
 
-        # Синхронизация администраторов по ID из переменных окружения
-        admin_ids = (
-            os.getenv("TG_ADMIN_ID")
-            or os.getenv("ADMIN_ID")
-            or os.getenv("TG_OWNER_ID")
+        # Синхронизация обязательного владельца системы (TG_OWNER_ID)
+        owner_id = (
+            os.getenv("TG_OWNER_ID")
             or os.getenv("OWNER_ID")
-            or os.getenv("CARNAVAL_OWNER_ID")
+            or os.getenv("OWNER_TELEGRAM_ID")
             or ""
         ).strip()
+        if owner_id and owner_id.isdigit():
+            from carnaval.db import set_state
+            set_state("owner_telegram_id", owner_id)
+            set_state("state", "INITIALIZED")
+            try:
+                from tg_bot.utils import load_authorized_users, save_authorized_users
+                auth_users = load_authorized_users()
+                oid = int(owner_id)
+                if oid not in auth_users or auth_users[oid].get("role") != "owner":
+                    auth_users[oid] = {"role": "owner", "username": "owner"}
+                    save_authorized_users(auth_users)
+                    logger.info(f"BootstrapEnv: назначен владелец системы Telegram ID {owner_id}")
+            except Exception as e:
+                logger.warning(f"BootstrapEnv: не удалось назначить владельца: {e}")
+
+        # Синхронизация дополнительных администраторов по ID из переменных окружения
+        admin_ids = (os.getenv("TG_ADMIN_ID") or os.getenv("ADMIN_ID") or "").strip()
         if admin_ids:
             try:
                 from tg_bot.utils import load_authorized_users, save_authorized_users
@@ -358,13 +352,31 @@ def _sync_existing_config(config_path: str) -> bool:
                 for aid in admin_ids.split(","):
                     aid = aid.strip()
                     if aid and aid.isdigit() and int(aid) not in auth_users:
-                        auth_users[int(aid)] = {}
+                        auth_users[int(aid)] = {"role": "admin", "username": f"admin_{aid}"}
                         users_updated = True
-                        logger.warning(f"BootstrapEnv: Telegram ID {aid} автоматически добавлен в список администраторов.")
+                        logger.info(f"BootstrapEnv: Telegram ID {aid} добавлен в список администраторов.")
                 if users_updated:
                     save_authorized_users(auth_users)
             except Exception as e:
                 logger.warning(f"BootstrapEnv: не удалось синхронизировать список администраторов: {e}")
+
+        # Устраняем MASKED_IN_BACKUP в рабочем конфиге если они остались от старых бэкапов
+        if cfg.has_section("FunPay") and cfg.get("FunPay", "golden_key", fallback="") == "MASKED_IN_BACKUP":
+            from carnaval.secrets_manager import SecretManager
+            real_key = SecretManager.get_secret("golden_key") or os.getenv("FUNPAY_GOLDEN_KEY", "") or os.getenv("GOLDEN_KEY", "")
+            if real_key:
+                cfg.set("FunPay", "golden_key", real_key)
+                changed = True
+        if cfg.has_section("Telegram") and cfg.get("Telegram", "token", fallback="") == "MASKED_IN_BACKUP":
+            real_token = os.getenv("TG_BOT_TOKEN", "") or os.getenv("TG_TOKEN", "")
+            if real_token:
+                cfg.set("Telegram", "token", real_token)
+                changed = True
+        if cfg.has_section("Carnaval") and cfg.get("Carnaval", "secretKey", fallback="") == "MASKED_IN_BACKUP":
+            real_sec = os.getenv("CARNAVAL_SECRET", "")
+            if real_sec:
+                cfg.set("Carnaval", "secretKey", real_sec)
+                changed = True
 
         if changed:
             with open(config_path, "w", encoding="utf-8") as f:

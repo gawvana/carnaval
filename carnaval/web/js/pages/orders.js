@@ -166,9 +166,10 @@ async function loadOrders(isRefresh = false) {
     content.innerHTML = `
       <div class="empty rv in">
         <p style="color:var(--err)">Ошибка загрузки заказов<br><small>${err.message}</small></p>
-        <button class="btn press" onclick="location.reload()" style="margin-top:12px; max-width:160px">Повторить</button>
+        <button id="orders-retry-btn" class="btn press" style="margin-top:12px; max-width:160px">Повторить</button>
       </div>
     `;
+    content.querySelector('#orders-retry-btn')?.addEventListener('click', () => loadOrders(true));
   }
 }
 

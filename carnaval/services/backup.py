@@ -42,6 +42,7 @@ def create_backup(target: Any = None) -> tuple[bool, str] | bytes:
                 f.write(data)
             _last_backup_path = path
             logger.info(f"Carnaval.Backup: создан бэкап {path} ({len(data)} байт)")
+            _rotate_backups(max_backups=5)
         except Exception as e:
             logger.warning(f"Carnaval.Backup: не удалось сохранить файл бэкапа {path}: {e}")
 
@@ -101,6 +102,28 @@ def get_last_backup() -> Optional[bytes]:
 def get_last_backup_path() -> Optional[str]:
     """Возвращает путь к последнему сохраненному файлу бэкапа."""
     return _last_backup_path
+
+
+def _rotate_backups(max_backups: int = 5) -> None:
+    """Удаляет старые резервные копии, оставляя не более max_backups самых свежих."""
+    try:
+        if not os.path.isdir(BACKUPS_DIR):
+            return
+        files = [
+            os.path.join(BACKUPS_DIR, f)
+            for f in os.listdir(BACKUPS_DIR)
+            if f.endswith(".zip") and os.path.isfile(os.path.join(BACKUPS_DIR, f))
+        ]
+        files.sort(key=os.path.getmtime, reverse=True)
+        if len(files) > max_backups:
+            for old_file in files[max_backups:]:
+                try:
+                    os.remove(old_file)
+                    logger.debug(f"Carnaval.Backup: ротация удалила старый бэкап {old_file}")
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.warning(f"Carnaval.Backup: ошибка ротации бэкапов: {e}")
 
 
 def list_backups() -> list[dict[str, Any]]:

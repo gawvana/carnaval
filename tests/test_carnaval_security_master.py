@@ -443,3 +443,44 @@ def test_startup_with_only_bot_token(monkeypatch):
     assert res_setup.status_code == 200
     data = res_setup.json()
     assert "state" in data
+
+
+def test_all_protected_routes_require_authentication():
+    """
+    Автоматический security-аудит маршрутов:
+    Обходит все зарегистрированные роуты FastAPI и проверяет,
+    что неавторизованные запросы возвращают 401 Unauthorized или 403 Forbidden.
+    Исключения: строго ограниченный белый список публичных эндпоинтов.
+    """
+    app = build_app()
+    client = TestClient(app)
+
+    PUBLIC_ALLOWLIST = {
+        "/api/health",
+        "/api/meta",
+        "/api/system/version",
+        "/api/auth",
+        "/api/auth/telegram",
+        "/api/auth/telegram/login",
+        "/api/setup/status",
+        "/api/setup/claim",
+    }
+
+    for route in app.routes:
+        path = getattr(route, "path", None)
+        methods = getattr(route, "methods", set())
+        if not path or not path.startswith("/api/"):
+            continue
+
+        if path in PUBLIC_ALLOWLIST:
+            continue
+
+        for method in methods:
+            if method in ("OPTIONS", "HEAD"):
+                continue
+
+            test_path = re.sub(r"\{[a-zA-Z_0-9]+\}", "test_param", path)
+            resp = client.request(method, test_path, json={})
+            assert resp.status_code in (401, 403), (
+                f"Маршрут {method} {path} ({test_path}) не защищен! Получен статус {resp.status_code}"
+            )

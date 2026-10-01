@@ -172,9 +172,9 @@ def _create_sample_zip(files: dict[str, bytes]) -> bytes:
 # 1. Тесты эндпоинта текущих версий
 # ---------------------------------------------------------------------------
 
-def test_current_version_endpoint(client):
+def test_current_version_endpoint(client, auth_headers):
     """GET /api/updates/current возвращает полные версионные метаданные и системные режимы."""
-    response = client.get("/api/updates/current")
+    response = client.get("/api/updates/current", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
 
@@ -192,10 +192,10 @@ def test_current_version_endpoint(client):
 # 2. Тесты манифеста и унифицированной схемы POST /api/updates/check
 # ---------------------------------------------------------------------------
 
-def test_manifest_generation_and_check(client):
+def test_manifest_generation_and_check(client, auth_headers):
     """Проверка генерации манифеста, валидации каналов и унифицированной схемы /api/updates/check."""
     # Проверка эндпоинта GET /api/updates/manifest
-    resp_manifest = client.get("/api/updates/manifest?channel=beta")
+    resp_manifest = client.get("/api/updates/manifest?channel=beta", headers=auth_headers)
     assert resp_manifest.status_code == 200
     manifest = resp_manifest.json()
     assert manifest["channel"] == "beta"
@@ -214,7 +214,7 @@ def test_manifest_generation_and_check(client):
     assert "release_date" in manifest
 
     # Проверка POST /api/updates/check — унифицированная схема
-    resp_check = client.post("/api/updates/check", json={"channel": "nightly"})
+    resp_check = client.post("/api/updates/check", json={"channel": "nightly"}, headers=auth_headers)
     assert resp_check.status_code == 200
     check_data = resp_check.json()
     assert check_data["ok"] is True
@@ -279,7 +279,7 @@ def test_safe_mode_persistence_and_bypass(client, setup_update_test_env, auth_he
     assert get_state("safe_mode") == "1"
 
     # Проверка GET /api/system/mode
-    mode_resp = client.get("/api/system/mode")
+    mode_resp = client.get("/api/system/mode", headers=auth_headers)
     assert mode_resp.status_code == 200
     assert mode_resp.json()["safe_mode"] is True
 
@@ -644,7 +644,7 @@ def test_real_atomic_install_lifecycle(client, auth_headers):
     assert not os.path.exists(staging_dir)
 
     # Проверка через эндпоинт версий
-    resp = client.get("/api/updates/current")
+    resp = client.get("/api/updates/current", headers=auth_headers)
     assert resp.status_code == 200
     assert resp.json()["app_version"] == "2.2.0"
 
@@ -681,9 +681,9 @@ def test_api_rollback_endpoint(client, auth_headers):
 # 10. Тесты статуса и каналов
 # ---------------------------------------------------------------------------
 
-def test_update_status_and_channels(client):
+def test_update_status_and_channels(client, auth_headers):
     """Проверка переключения каналов (stable, beta, nightly) и получения статуса."""
-    resp_status = client.get("/api/updates/status")
+    resp_status = client.get("/api/updates/status", headers=auth_headers)
     assert resp_status.status_code == 200
     st = resp_status.json()
     assert "state" in st

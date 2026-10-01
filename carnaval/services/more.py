@@ -24,7 +24,7 @@ import signal
 import sys
 import threading
 import zipfile
-from typing import Any
+from typing import Any, Optional, Tuple, Dict, List, Union
 from uuid import UUID
 
 from carnaval.deps import get_cardinal
@@ -1084,15 +1084,60 @@ def restore_backup(zip_bytes: bytes) -> tuple[bool, str]:
                     continue
 
                 if member.startswith("configs/"):
-                    zf.extract(member, path=".")
+                    sub = member[len("configs/"):]
+                    data = zf.read(member)
+                    from carnaval.paths import CONFIGS_DIR
+                    dest_path = os.path.join(CONFIGS_DIR, sub) if sub else CONFIGS_DIR
+                    if dest_path.endswith((".cfg", ".ini")) and os.path.isfile(dest_path):
+                        try:
+                            from configparser import ConfigParser
+                            old_cp = ConfigParser(delimiters=(":", "="), interpolation=None)
+                            old_cp.optionxform = str
+                            old_cp.read(dest_path, encoding="utf-8")
+
+                            new_cp = ConfigParser(delimiters=(":", "="), interpolation=None)
+                            new_cp.optionxform = str
+                            new_cp.read_string(data.decode("utf-8"))
+
+                            for sec in new_cp.sections():
+                                for opt in new_cp.options(sec):
+                                    val = new_cp.get(sec, opt)
+                                    if "MASKED_IN_BACKUP" in val:
+                                        if old_cp.has_section(sec) and old_cp.has_option(sec, opt):
+                                            old_val = old_cp.get(sec, opt)
+                                            if "MASKED_IN_BACKUP" not in old_val:
+                                                new_cp.set(sec, opt, old_val)
+                                                continue
+                                        from carnaval.secrets_manager import SecretManager
+                                        if opt.lower() == "golden_key":
+                                            sec_val = SecretManager.get_secret("golden_key") or os.getenv("FUNPAY_GOLDEN_KEY", "") or os.getenv("GOLDEN_KEY", "")
+                                            if sec_val:
+                                                new_cp.set(sec, opt, sec_val)
+                                        elif opt.lower() == "token":
+                                            sec_val = os.getenv("TG_BOT_TOKEN", "") or os.getenv("TG_TOKEN", "")
+                                            if sec_val:
+                                                new_cp.set(sec, opt, sec_val)
+                                        elif opt.lower() == "secretkey":
+                                            sec_val = os.getenv("CARNAVAL_SECRET", "")
+                                            if sec_val:
+                                                new_cp.set(sec, opt, sec_val)
+
+                            out_buf = io.StringIO()
+                            new_cp.write(out_buf)
+                            data = out_buf.getvalue().encode("utf-8")
+                        except Exception as ex:
+                            logger.warning(f"Carnaval.More: не удалось восстановить секреты при restore: {ex}")
+
                     try:
-                        from carnaval.paths import CONFIGS_DIR
-                        sub = member[len("configs/"):]
-                        if sub:
-                            dest_path = os.path.join(CONFIGS_DIR, sub)
-                            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-                            with open(dest_path, "wb") as f_out:
-                                f_out.write(zf.read(member))
+                        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                        with open(dest_path, "wb") as f_out:
+                            f_out.write(data)
+                        # Также обновляем в корневой папке configs/ если CONFIGS_DIR другой
+                        if os.path.abspath(CONFIGS_DIR) != os.path.abspath("configs"):
+                            root_dest = os.path.join("configs", sub)
+                            os.makedirs(os.path.dirname(root_dest), exist_ok=True)
+                            with open(root_dest, "wb") as f_out2:
+                                f_out2.write(data)
                     except Exception:
                         pass
                 elif member.startswith("storage/products/"):

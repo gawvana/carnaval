@@ -438,7 +438,7 @@ function renderSections(container, data) {
       try {
         const res = await api.logoutAll();
         showToast(`Отозвано сессий: ${res.revoked_count ?? 0}`, 'success');
-        location.reload();
+        loadAndRenderProfileData(container, { style: { display: 'none' } }, null);
       } catch (e) {
         showToast('Ошибка: ' + e.message, 'error');
       }
@@ -499,7 +499,7 @@ function renderSections(container, data) {
         try {
           await api.lockPanel();
           showToast('Панель заблокирована', 'success');
-          location.reload();
+          loadAndRenderProfileData(container, { style: { display: 'none' } }, null);
         } catch (e) {
           showToast('Ошибка блокировки панели: ' + e.message, 'error');
         }
@@ -519,7 +519,7 @@ function renderSections(container, data) {
       try {
         await api.logout();
         tg.close();
-        location.reload();
+        window.location.href = '/';
       } catch (e) {
         showToast('Ошибка выхода: ' + e.message, 'error');
       }
