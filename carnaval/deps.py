@@ -38,17 +38,18 @@ def get_cardinal() -> "Cardinal":
 
 
 def extract_session_token(request: Request) -> Optional[str]:
-    """Извлекает токен сессии из HttpOnly куки или заголовка Authorization."""
-    # 1. Приоритет: HttpOnly cookie
-    cookie_token = request.cookies.get("carnaval_session")
-    if cookie_token:
-        return cookie_token.strip()
-
-    # 2. Fallback: Bearer заголовок
+    """Извлекает токен сессии из заголовка Authorization (приоритет) или HttpOnly куки."""
+    # 1. Приоритет: Bearer заголовок (предпочтителен в SPA/WebView)
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         token = auth_header[7:].strip()
-        return token if token else None
+        if token:
+            return token
+
+    # 2. Fallback: HttpOnly cookie (для браузерных сессий)
+    cookie_token = request.cookies.get("carnaval_session")
+    if cookie_token:
+        return cookie_token.strip()
 
     return None
 
@@ -72,7 +73,8 @@ def require_telegram_auth(request: Request) -> dict:
         )
 
     # Проверка CSRF для куки-запросов на мутирующие методы
-    if request.cookies.get("carnaval_session") and request.method in ("POST", "PUT", "PATCH", "DELETE"):
+    has_bearer = request.headers.get("Authorization", "").startswith("Bearer ")
+    if request.cookies.get("carnaval_session") and not has_bearer and request.method in ("POST", "PUT", "PATCH", "DELETE"):
         # Если эндпоинт не в списке исключений
         if not request.url.path.startswith("/api/auth/"):
             csrf_token = request.headers.get("X-CSRF-Token")
