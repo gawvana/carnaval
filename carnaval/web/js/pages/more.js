@@ -107,7 +107,7 @@ async function renderIndexView(root) {
   // Загружаем общую статистику параллельно
   const [metaRes, healthRes] = await Promise.all([
     api.getMeta().catch(() => ({ version: '0.1.17' })),
-    api.getHealth().catch(() => ({ status: 'ok', telegram: 'connected', funpay: 'connected', uptime_sec: 0 })),
+    api.getHealth().catch(() => ({ status: 'error', telegram: 'unknown', funpay: 'unknown', uptime_sec: 0 })),
   ]);
 
   const version = metaRes.version || '0.1.17';

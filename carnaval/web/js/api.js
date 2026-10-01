@@ -578,6 +578,10 @@ export async function shutdownCardinal(confirm = false) {
   return await request('POST', '/api/more/system/shutdown', { json: { confirm } });
 }
 
+export async function getMeta() {
+  return await request('GET', '/api/meta', { allowRelogin: false });
+}
+
 // ── Алиасы и совместимость страниц ───────────────────────────
 export { onEvent as openEventStream } from './sse.js';
 export const updateSetting = patchSetting;

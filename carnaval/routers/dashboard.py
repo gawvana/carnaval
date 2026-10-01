@@ -65,10 +65,24 @@ async def dashboard(request: Request, user_id: int = Depends(require_user)) -> J
 
     # --- Безопасные времена поднятия ---
     r_time = getattr(cardinal, "raise_time", None)
-    safe_raise_time = int(r_time) if isinstance(r_time, (int, float)) else None
+    if isinstance(r_time, dict) and r_time:
+        now = time.time()
+        future_times = [v for v in r_time.values() if isinstance(v, (int, float)) and v > now]
+        safe_raise_time = int(min(future_times)) if future_times else None
+    elif isinstance(r_time, (int, float)):
+        safe_raise_time = int(r_time)
+    else:
+        safe_raise_time = None
 
     rs_time = getattr(cardinal, "raised_time", None)
-    safe_raised_time = int(rs_time) if isinstance(rs_time, (int, float)) else None
+    if isinstance(rs_time, dict) and rs_time:
+        now = time.time()
+        past_times = [v for v in rs_time.values() if isinstance(v, (int, float)) and v <= now]
+        safe_raised_time = int(max(past_times)) if past_times else None
+    elif isinstance(rs_time, (int, float)):
+        safe_raised_time = int(rs_time)
+    else:
+        safe_raised_time = None
 
     # --- Переключатели (FunPay секция) ---
     fp = cardinal.MAIN_CFG["FunPay"]
@@ -96,5 +110,5 @@ async def dashboard(request: Request, user_id: int = Depends(require_user)) -> J
         "raise_time": safe_raise_time,
         "raised_time": safe_raised_time,
         "version": getattr(cardinal, "VERSION", "0.1.17.15"),
-        "running": bool(getattr(cardinal, "running", True)),
+        "running": bool(getattr(cardinal, "running", False)),
     })
