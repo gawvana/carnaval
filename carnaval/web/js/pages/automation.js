@@ -11,8 +11,7 @@ import {
   getDeliveryLots, createDeliveryLot, updateDeliveryLot, deleteDeliveryLot, createDeliveryTest,
   getProductsFiles, createProductsFile, addGoodsToFile, deleteProductsFile,
   getAutoResponseCommands, createAutoResponseCommand, updateAutoResponseCommand, deleteAutoResponseCommand,
-  getTemplates, createTemplate, updateTemplate, deleteTemplate,
-  getFunPayLots
+  getTemplates, createTemplate, updateTemplate, deleteTemplate
 } from '../api.js';
 import { tg } from '../tg.js';
 import { renderHeader } from '../ui/header.js';

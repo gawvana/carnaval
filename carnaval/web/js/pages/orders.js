@@ -5,7 +5,7 @@
  * ответы на отзывы.
  */
 
-import { getOrders, getOrderDetails, refundOrder, sendReviewReply, deleteReviewReply } from '../api.js';
+import { getOrders, getOrderDetails, refundOrder } from '../api.js';
 import { tg } from '../tg.js';
 import { renderHeader } from '../ui/header.js';
 import { openSheet, closeSheet, openConfirmSheet } from '../ui/sheet.js';
