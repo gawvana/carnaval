@@ -122,11 +122,19 @@ async function startAppDashboard() {
 
   onEvent((ev) => {
     if (ev.type === 'order.new') {
-      showToast(`📦 Новый заказ #${ev.data?.order_id || ''}`, 'info');
+      const buyer = ev.data?.buyer_username || ev.data?.username || 'покупателя';
+      showToast(`📦 Новый заказ #${ev.data?.order_id || ''} от ${buyer}`, 'ok');
       tg.haptic.notification('success');
     } else if (ev.type === 'message.new') {
-      showToast(`💬 ${ev.data?.chat_name || 'Чат'}: ${ev.data?.text || ''}`.slice(0, 50), 'info');
+      const sender = ev.data?.chat_name || ev.data?.author || 'Чат';
+      showToast(`💬 ${sender}: ${ev.data?.text || ''}`.slice(0, 60), 'info');
       tg.haptic.impact('light');
+    } else if (ev.type === 'lots.raised') {
+      showToast('🚀 Лоты успешно подняты!', 'ok');
+      tg.haptic.notification('success');
+    } else if (ev.type === 'delivery.done') {
+      showToast(`📦 Товар выдан: ${ev.data?.product || ''}`, 'ok');
+      tg.haptic.notification('success');
     }
   });
 }

@@ -9,6 +9,7 @@ import { tg } from '../tg.js';
 import { t } from '../i18n.js';
 import { showToast } from '../ui/toast.js';
 import { renderHeader } from '../ui/header.js';
+import { escapeHtml } from '../ui/sanitize.js';
 
 let _stopEvents = null;
 let _raiseTimer = null;
@@ -92,11 +93,11 @@ function buildDashboardHTML(d) {
       <div style="display:flex; justify-content:space-between; align-items:flex-start">
         <div style="display:flex; align-items:center; gap:10px">
           <div style="width:38px; height:38px; border-radius:50%; background:var(--primary); color:var(--on-primary); display:grid; place-items:center; font-weight:800; font-size:16px">
-            ${(acc.username || 'F')[0].toUpperCase()}
+            ${escapeHtml((acc.username || 'F')[0].toUpperCase())}
           </div>
           <div>
-            <b style="font-size:17px; display:block">${acc.username || 'Аккаунт не привязан'}</b>
-            <span style="font-size:12px; opacity:.8">ID: ${acc.id || '—'} · ${d.running ? '🟢 онлайн' : '🔴 офлайн'}</span>
+            <b style="font-size:17px; display:block">${escapeHtml(acc.username || 'Аккаунт не привязан')}</b>
+            <span style="font-size:12px; opacity:.8">ID: ${escapeHtml(acc.id || '—')} · ${d.running ? '🟢 онлайн' : '🔴 офлайн'}</span>
           </div>
         </div>
         ${acc.id ? `
@@ -208,15 +209,10 @@ function initRaiseTimer(root, raiseTime) {
 }
 
 function handleLiveEvent(ev, root) {
-  tg.haptic.notification('success');
-  if (ev.type === 'order.new') {
-    showToast(`💰 Новый заказ #${ev.data?.order_id || ''} от ${ev.data?.username || 'покупателя'}!`, 'ok');
-  } else if (ev.type === 'message.new') {
-    showToast(`✉️ Сообщение от ${ev.data?.username || 'клиента'}`, '');
-  } else if (ev.type === 'lots.raised') {
-    showToast(`🚀 Лоты успешно подняты!`, 'ok');
-  } else if (ev.type === 'delivery.done') {
-    showToast(`📦 Товар выдан: ${ev.data?.product || ''}`, 'ok');
+  // Глобальные toast-уведомления обрабатываются централизованно в app.js
+  if (ev.type === 'lots.raised') {
+    const timerVal = root.querySelector('#raise-timer-val');
+    if (timerVal) timerVal.textContent = 'только что';
   }
 }
 
