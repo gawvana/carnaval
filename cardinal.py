@@ -708,16 +708,33 @@ class Cardinal(object):
         """Повторная инициализация аккаунта после настройки Golden Key в Mini App."""
         try:
             from carnaval.secrets_manager import SecretManager
-            g_key = SecretManager.get_secret("golden_key") or self.MAIN_CFG["FunPay"].get("golden_key", "").strip()
+            g_key = (
+                SecretManager.get_secret("golden_key")
+                or self.MAIN_CFG["FunPay"].get("golden_key", "").strip()
+                or os.getenv("FUNPAY_GOLDEN_KEY", "").strip()
+                or os.getenv("GOLDEN_KEY", "").strip()
+            )
         except Exception:
-            g_key = self.MAIN_CFG["FunPay"].get("golden_key", "").strip()
+            g_key = (
+                self.MAIN_CFG["FunPay"].get("golden_key", "").strip()
+                or os.getenv("FUNPAY_GOLDEN_KEY", "").strip()
+                or os.getenv("GOLDEN_KEY", "").strip()
+            )
 
         if not g_key:
+            logger.warning("FunPay: reinit_account вызван, но Golden Key не найден ни в хранилище, ни в ENV.")
             return False
 
-        self.account.golden_key = g_key
+        clean_key = g_key.strip()
+        if len(clean_key) != 32:
+            logger.warning(f"FunPay: Golden Key имеет некорректную длину ({len(clean_key)} симв., ожидается ровно 32).")
+            return False
+
+        self.account.golden_key = clean_key
+        self.account.phpsessid = None
         try:
-            self.account.get()
+            logger.info("FunPay: авторизация на funpay.com через Account.get(update_phpsessid=True)...")
+            self.account.get(update_phpsessid=True)
             self.balance = self.get_balance()
             if self.runner is None:
                 self.runner = FunPayAPI.Runner(self.account, self.old_mode_enabled)
@@ -725,8 +742,12 @@ class Cardinal(object):
                 Thread(target=self.lots_raise_loop, daemon=True).start()
                 Thread(target=self.update_session_loop, daemon=True).start()
             self.__update_profile()
-            logger.info(f"FunPay: аккаунт {self.account.username} успешно активирован!")
+            self.running = True
+            logger.info(f"FunPay: аккаунт {self.account.username} (ID: {self.account.id}) успешно активирован!")
             return True
+        except FunPayAPI.exceptions.UnauthorizedError as e:
+            logger.error(f"FunPay: неверный или устаревший Golden Key (UnauthorizedError): {e}")
+            return False
         except Exception as e:
             logger.error(f"FunPay: ошибка подключения аккаунта: {e}")
             return False

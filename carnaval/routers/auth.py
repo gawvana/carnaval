@@ -103,6 +103,11 @@ async def telegram_auth(req: TelegramAuthRequest, request: Request, response: Re
     state = get_state("state", "UNINITIALIZED")
     owner_id_str = get_state("owner_telegram_id")
 
+    env_owner = os.getenv("TG_OWNER_ID", "").strip() or os.getenv("OWNER_TELEGRAM_ID", "").strip()
+    if env_owner and str(telegram_user_id) == env_owner:
+        owner_id_str = env_owner
+        set_state("owner_telegram_id", env_owner)
+
     # Если система уже настроена и пользователь не владелец и не в списке авторизованных
     if state == "INITIALIZED" and owner_id_str and int(owner_id_str) != telegram_user_id:
         # Проверяем, есть ли пользователь в authorized_users Cardinal

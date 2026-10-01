@@ -72,8 +72,14 @@ async def get_orders(status: Optional[str] = None, start_from: Optional[str] = N
     """
     cardinal = get_cardinal()
     acc = cardinal.account
-    if not acc or not getattr(acc, "id", None):
-        return {"orders": [], "next_order_id": None, "funpay_connected": False}
+    if not acc or not getattr(acc, "is_initiated", False):
+        if acc and getattr(acc, "golden_key", None):
+            try:
+                await asyncio.to_thread(cardinal.reinit_account)
+            except Exception:
+                pass
+        if not acc or not getattr(acc, "is_initiated", False):
+            return {"orders": [], "next_order_id": None, "funpay_connected": False}
 
     include_paid = True
     include_closed = True
@@ -113,7 +119,7 @@ async def get_order(order_id: str) -> Optional[dict[str, Any]]:
     """Получить детальную информацию о заказе."""
     cardinal = get_cardinal()
     acc = cardinal.account
-    if not acc or not getattr(acc, "id", None):
+    if not acc or not getattr(acc, "is_initiated", False):
         return None
 
     def _fetch():
@@ -138,7 +144,7 @@ async def refund_order(order_id: str, confirm: bool = False) -> tuple[bool, str]
 
     cardinal = get_cardinal()
     acc = cardinal.account
-    if not acc or not getattr(acc, "id", None):
+    if not acc or not getattr(acc, "is_initiated", False):
         return False, "FunPay account not connected"
 
     def _exec():

@@ -41,8 +41,14 @@ async def get_chats(update: bool = False) -> list[dict[str, Any]]:
     """Получить список последних переписок продавца."""
     cardinal = get_cardinal()
     acc = cardinal.account
-    if not acc or not getattr(acc, "id", None):
-        return []
+    if not acc or not getattr(acc, "is_initiated", False):
+        if acc and getattr(acc, "golden_key", None):
+            try:
+                await asyncio.to_thread(cardinal.reinit_account)
+            except Exception:
+                pass
+        if not acc or not getattr(acc, "is_initiated", False):
+            return []
 
     def _fetch():
         try:
@@ -59,7 +65,7 @@ async def get_chat_history(chat_id: int | str, last_message_id: Optional[int] = 
     """Получить историю сообщений в чате."""
     cardinal = get_cardinal()
     acc = cardinal.account
-    if not acc or not getattr(acc, "id", None):
+    if not acc or not getattr(acc, "is_initiated", False):
         return []
 
     def _fetch():
@@ -78,7 +84,7 @@ async def send_message(chat_id: int | str, text: str, chat_name: Optional[str] =
     Поддерживает подстановки, $photo=ID, $sleep= и водяной знак.
     """
     cardinal = get_cardinal()
-    if not cardinal.account:
+    if not cardinal.account or not getattr(cardinal.account, "is_initiated", False):
         return False
 
     def _send():
