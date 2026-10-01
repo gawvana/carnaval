@@ -13,6 +13,9 @@ from .chats import router as chats_router
 from .automation import router as automation_router
 from .more import router as more_router
 from .setup import router as setup_router
+from .search import router as search_router
+from .update import router as update_router
+from .live import router as live_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router, tags=["auth"])
@@ -24,3 +27,6 @@ api_router.include_router(orders_router, tags=["orders"])
 api_router.include_router(chats_router, tags=["chats"])
 api_router.include_router(automation_router, tags=["automation"])
 api_router.include_router(more_router, tags=["more"])
+api_router.include_router(search_router, tags=["search"])
+api_router.include_router(update_router, tags=["update"])
+api_router.include_router(live_router, tags=["live"])

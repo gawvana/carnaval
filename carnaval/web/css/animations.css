@@ -1,0 +1,116 @@
+/*
+  animations.css — Carnaval iOS 27 Fluid Motion System
+  Includes spring curves, status morphs, progress rings, and reduced-motion support.
+*/
+
+:root {
+  --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --ease-fluid: cubic-bezier(0.2, 0.9, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 150ms;
+  --dur-normal: 260ms;
+  --dur-slow: 400ms;
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Spring button tap effect */
+.spring-tap {
+  transition: transform var(--dur-fast) var(--ease-fluid), opacity var(--dur-fast) ease;
+}
+.spring-tap:active {
+  transform: scale(0.96);
+  opacity: 0.85;
+}
+
+/* Loading Shimmer */
+.shimmer {
+  background: linear-gradient(90deg, var(--track) 0%, var(--glass2) 50%, var(--track) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.8s infinite;
+  border-radius: var(--r1);
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Status Morph */
+.morph-scale-in {
+  animation: morphScaleIn var(--dur-normal) var(--ease-spring) forwards;
+}
+
+@keyframes morphScaleIn {
+  from {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Topology Node Pulse */
+.node-pulse-healthy {
+  animation: nodePulseHealthy 2s infinite;
+}
+
+@keyframes nodePulseHealthy {
+  0% { box-shadow: 0 0 0 0 rgba(27, 110, 74, 0.4); }
+  70% { box-shadow: 0 0 0 8px rgba(27, 110, 74, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(27, 110, 74, 0); }
+}
+
+.node-pulse-warning {
+  animation: nodePulseWarning 2s infinite;
+}
+
+@keyframes nodePulseWarning {
+  0% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.4); }
+  70% { box-shadow: 0 0 0 8px rgba(217, 119, 6, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0); }
+}
+
+.node-pulse-error {
+  animation: nodePulseError 1.5s infinite;
+}
+
+@keyframes nodePulseError {
+  0% { box-shadow: 0 0 0 0 rgba(186, 27, 61, 0.5); }
+  70% { box-shadow: 0 0 0 10px rgba(186, 27, 61, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(186, 27, 61, 0); }
+}
+
+/* Circular Progress Ring */
+.progress-ring {
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
+.progress-ring-circle {
+  stroke-dasharray: 283;
+  stroke-dashoffset: 283;
+  transition: stroke-dashoffset 0.35s ease;
+  stroke-linecap: round;
+}
+
+/* Success Checkmark Pop */
+.check-pop {
+  animation: checkPop 0.4s var(--ease-spring) forwards;
+}
+
+@keyframes checkPop {
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}

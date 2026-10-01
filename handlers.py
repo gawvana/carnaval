@@ -598,7 +598,7 @@ def deliver_product_handler(c: Cardinal, e: NewOrderEvent, *args) -> None:
     """
     Обертка для deliver_product(), обрабатывающая ошибки.
     """
-    if not c.MAIN_CFG["FunPay"].getboolean("autoDelivery"):
+    if not c.autodelivery_enabled:
         return
     if e.order.buyer_username in c.blacklist and c.bl_delivery_enabled:
         logger.info(f"Пользователь {e.order.buyer_username} находится в ЧС и включена блокировка автовыдачи. "

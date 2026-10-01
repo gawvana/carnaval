@@ -24,6 +24,9 @@ from fastapi.responses import JSONResponse
 from carnaval import auth, bridge
 from carnaval.deps import set_cardinal, get_cardinal
 from carnaval.routers import api_router
+from carnaval.routers.search import router as search_router
+from carnaval.routers.update import router as update_router
+from carnaval.routers.live import router as live_router
 
 if TYPE_CHECKING:
     from cardinal import Cardinal
@@ -291,6 +294,10 @@ def build_app(allowed_origins: list[str] | None = None, serve_static: bool | Non
         })
 
     # API роутеры
+    if not any(getattr(r, "original_router", None) is update_router for r in api_router.routes):
+        api_router.include_router(update_router)
+    if not any(getattr(r, "original_router", None) is live_router for r in api_router.routes):
+        api_router.include_router(live_router, tags=["live"])
     app.include_router(api_router, prefix="/api")
 
     # Статика Mini App (единый origin)

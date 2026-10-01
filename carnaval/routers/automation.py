@@ -5,7 +5,7 @@ carnaval/routers/automation.py — API для вкладки «Авто» (ав�
 from __future__ import annotations
 
 import logging
-from typing import Optional, List
+from typing import Optional, List, Any
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, Request, UploadFile, File, Query
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -64,6 +64,12 @@ class TemplateSendRequest(BaseModel):
 
 class TemplateRenderRequest(BaseModel):
     username: Optional[str] = None
+
+
+class AutomationSimulateRequest(BaseModel):
+    event_type: str
+    test_payload: Optional[dict[str, Any]] = None
+    payload: Optional[dict[str, Any]] = None
 
 
 
@@ -387,3 +393,40 @@ async def get_funpay_lots_route(request: Request, user_id: int = Depends(require
         return JSONResponse({"lots": lots})
     except Exception as e:
         return JSONResponse({"error": "failed_to_fetch_lots", "message": str(e)}, status_code=500)
+
+
+# ─────────────────────────────────────────────────────────────
+# 6. Эмуляция и трассировка правил автоматизации
+# ─────────────────────────────────────────────────────────────
+
+@router.post("/automation/simulate")
+async def simulate_automation_route(
+    req: AutomationSimulateRequest,
+    request: Request,
+    user_id: int = Depends(require_user),
+) -> JSONResponse:
+    """
+    Эмуляция выполнения правил автоматизации (автовыдача, автоответчик, приветствия)
+    без сетевых вызовов и списания товаров.
+    """
+    payload = req.test_payload if req.test_payload is not None else (req.payload or {})
+    try:
+        result = auto_svc.simulate_automation(req.event_type, payload)
+        return JSONResponse(result)
+    except Exception as e:
+        logger.exception("Simulation error")
+        return JSONResponse({"error": "simulation_failed", "message": str(e)}, status_code=400)
+
+
+@router.get("/automation/debug-traces")
+async def get_debug_traces_route(
+    request: Request,
+    user_id: int = Depends(require_user),
+    limit: int = Query(50, ge=1, le=500),
+) -> JSONResponse:
+    """
+    Получение кольцевого буфера последних трассировок правил автоматизации.
+    """
+    traces = auto_svc.get_execution_traces(limit=limit)
+    return JSONResponse({"traces": traces})
+

@@ -62,6 +62,27 @@ const SECTIONS = [
     iconCls: 'more-cat-icon-sys',
     desc: 'Журнал логов, бэкапы, перезапуск бота',
   },
+  {
+    id: 'updates',
+    label: 'Центр обновлений',
+    iconName: 'update',
+    iconCls: 'more-cat-icon-sys',
+    desc: 'Версионирование, проверка обновлений и Safe Mode',
+  },
+  {
+    id: 'automation-lab',
+    label: 'Лаборатория авто',
+    iconName: 'automation',
+    iconCls: 'more-cat-icon-plugins',
+    desc: 'Конструктор правил, симулятор и отладчик выдачи',
+  },
+  {
+    id: 'plugins-lab',
+    label: 'Лаборатория плагинов',
+    iconName: 'plugins',
+    iconCls: 'more-cat-icon-plugins',
+    desc: 'Каталог расширений, консольные команды и статус',
+  },
 ];
 
 // Карта метаданных для секции сообщений
@@ -274,6 +295,19 @@ async function renderIndexView(root) {
 // ── Переход в секцию (Detail View) ──────────────────────────────────────────
 
 async function openSection(sectionId, root) {
+  if (sectionId === 'updates') {
+    location.hash = 'updates';
+    return;
+  }
+  if (sectionId === 'automation-lab') {
+    location.hash = 'automation-lab';
+    return;
+  }
+  if (sectionId === 'plugins-lab') {
+    location.hash = 'plugins-lab';
+    return;
+  }
+
   currentTabId = sectionId;
   const sectionMeta = SECTIONS.find(s => s.id === sectionId) || SECTIONS[0];
 

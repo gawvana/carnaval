@@ -955,6 +955,13 @@ class Cardinal(object):
         for func in handlers_list:
             try:
                 plugin_uuid = getattr(func, "plugin_uuid")
+                if plugin_uuid is not None:
+                    try:
+                        from carnaval.services.system_mode import should_bypass_plugin
+                        if should_bypass_plugin(plugin_uuid):
+                            continue
+                    except Exception:
+                        pass
                 if plugin_uuid is None or (plugin_uuid in self.plugins and self.plugins[plugin_uuid].enabled):
                     func(*args)
             except Exception as ex:
@@ -1020,6 +1027,12 @@ class Cardinal(object):
 
     @property
     def autodelivery_enabled(self) -> bool:
+        try:
+            from carnaval.services.system_mode import is_maintenance_mode
+            if is_maintenance_mode():
+                return False
+        except Exception:
+            pass
         return self.MAIN_CFG["FunPay"].getboolean("autoDelivery")
 
     @property

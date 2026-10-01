@@ -9,17 +9,28 @@ import { renderChats } from './pages/chats.js';
 import { renderAutomation } from './pages/automation.js';
 import { renderMore } from './pages/more.js';
 import { renderProfile } from './pages/profile.js';
+import { renderUpdates } from './pages/updates.js';
+import { renderAutomationLab } from './pages/automation_lab.js';
+import { renderPluginsLab } from './pages/plugins_lab.js';
 import { renderDock } from './ui/dock.js';
 import { getIcon } from './ui/icons.js';
+import { initIsland } from './ui/island.js';
+import { initCommandPalette } from './ui/command_palette.js';
 
 const ROUTES = {
-  dashboard:  renderDashboard,
-  orders:     renderOrders,
-  chats:      renderChats,
-  automation: renderAutomation,
-  more:       renderMore,
-  profile:    renderProfile,
-  '/profile': renderProfile,
+  dashboard:        renderDashboard,
+  orders:           renderOrders,
+  chats:            renderChats,
+  automation:       renderAutomation,
+  more:             renderMore,
+  profile:          renderProfile,
+  '/profile':       renderProfile,
+  updates:          renderUpdates,
+  '/updates':       renderUpdates,
+  'automation-lab': renderAutomationLab,
+  '/automation-lab': renderAutomationLab,
+  'plugins-lab':    renderPluginsLab,
+  '/plugins-lab':   renderPluginsLab,
 };
 
 const DEFAULT_ROUTE = 'dashboard';
@@ -35,6 +46,9 @@ const TABS = [
 function resolveRoute(hash) {
   const clean = (hash || '').replace(/^#\/?/, '').trim();
   if (clean === 'profile' || clean === '/profile') return 'profile';
+  if (clean === 'updates' || clean === '/updates') return 'updates';
+  if (clean === 'automation-lab' || clean === '/automation-lab') return 'automation-lab';
+  if (clean === 'plugins-lab' || clean === '/plugins-lab') return 'plugins-lab';
   return clean in ROUTES ? clean : DEFAULT_ROUTE;
 }
 
@@ -71,6 +85,14 @@ class Router {
     tc.className = 'toast-container';
     tc.id = 'toasts';
     document.body.appendChild(tc);
+
+    // Dynamic System Island & Command Palette
+    try {
+      initIsland();
+      initCommandPalette();
+    } catch (e) {
+      console.warn('System Island/Palette init:', e);
+    }
 
     // Scroll → collapse dock
     app.addEventListener('scroll', () => {

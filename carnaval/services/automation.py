@@ -13,6 +13,9 @@ import os
 import re
 import string
 import random
+import time
+import uuid
+from collections import deque
 import asyncio
 import threading
 from typing import Any, Optional
@@ -25,6 +28,8 @@ from tg_bot import utils as tg_utils
 _AD_LOCK = threading.Lock()
 _AR_LOCK = threading.Lock()
 _TEMPLATES_LOCK = threading.Lock()
+_TRACES_LOCK = threading.Lock()
+_TRACES_BUFFER: deque[dict[str, Any]] = deque(maxlen=200)
 
 FILENAME_REGEX = re.compile(r"^[А-Яа-яЁёA-Za-z0-9_\-\. ]+$")
 
@@ -550,3 +555,484 @@ async def get_funpay_lots(refresh: bool = False) -> list[dict[str, Any]]:
             return []
 
     return await asyncio.to_thread(_fetch)
+
+
+# ─────────────────────────────────────────────────────────────
+# 6. Эмуляция автоматизации и кольцевой буфер трассировок
+# ─────────────────────────────────────────────────────────────
+
+def record_execution_trace(trace: dict[str, Any]) -> None:
+    """Сохраняет трассировку выполнения правила в кольцевой буфер."""
+    with _TRACES_LOCK:
+        _TRACES_BUFFER.append(trace)
+
+
+def get_execution_traces(limit: int = 50) -> list[dict[str, Any]]:
+    """
+    Возвращает кольцевой буфер недавних оценок правил.
+    Свежие записи возвращаются первыми.
+    """
+    with _TRACES_LOCK:
+        traces = list(_TRACES_BUFFER)
+    return list(reversed(traces))[:limit]
+
+
+def clear_execution_traces() -> None:
+    """Очищает кольцевой буфер трассировок (полезно для тестов)."""
+    with _TRACES_LOCK:
+        _TRACES_BUFFER.clear()
+
+
+def _simulate_delivery(cardinal: Any, payload: dict[str, Any]) -> tuple[Optional[str], list[dict[str, Any]], Optional[dict[str, Any]], bool]:
+    conditions: list[dict[str, Any]] = []
+    lot_name_input = str(payload.get("lot_name") or payload.get("description") or payload.get("name") or "").strip()
+    buyer_username = str(payload.get("buyer_username") or payload.get("username") or payload.get("buyer") or "TestBuyer").strip()
+    amount = max(1, int(payload.get("amount", 1)))
+    order_id = str(payload.get("order_id") or payload.get("id") or "TEST12345")
+    chat_id = int(payload.get("chat_id", 12345))
+
+    # 1. Глобальный переключатель автовыдачи
+    global_enabled = True
+    if hasattr(cardinal, "MAIN_CFG") and cardinal.MAIN_CFG.has_section("FunPay"):
+        try:
+            global_enabled = cardinal.MAIN_CFG.getboolean("FunPay", "autoDelivery", fallback=True)
+        except Exception:
+            global_enabled = True
+    if hasattr(cardinal, "autodelivery_enabled"):
+        global_enabled = bool(global_enabled and cardinal.autodelivery_enabled)
+
+    conditions.append({
+        "name": "global_auto_delivery",
+        "passed": bool(global_enabled),
+        "details": "Auto-delivery is enabled globally" if global_enabled else "Auto-delivery is disabled globally in config",
+    })
+
+    # 2. Проверка чёрного списка
+    bl_blocked = False
+    if hasattr(cardinal, "blacklist") and buyer_username in cardinal.blacklist:
+        bl_enabled = True
+        if hasattr(cardinal, "bl_delivery_enabled"):
+            bl_enabled = cardinal.bl_delivery_enabled
+        elif hasattr(cardinal, "MAIN_CFG") and cardinal.MAIN_CFG.has_section("BlockList"):
+            bl_enabled = cardinal.MAIN_CFG.getboolean("BlockList", "blockDelivery", fallback=True)
+        if bl_enabled:
+            bl_blocked = True
+
+    conditions.append({
+        "name": "buyer_not_blacklisted",
+        "passed": not bl_blocked,
+        "details": "Buyer is not blacklisted" if not bl_blocked else f"Buyer '{buyer_username}' is blacklisted and delivery is blocked",
+    })
+
+    # 3. Поиск подходящего правила в AD_CFG
+    matched_rule_name = None
+    rule_section = None
+    ad_cfg = getattr(cardinal, "AD_CFG", None)
+
+    if ad_cfg and hasattr(ad_cfg, "sections"):
+        matched_lots = []
+        # Pass 0: exact match
+        for s in ad_cfg.sections():
+            if lot_name_input == s:
+                matched_lots.append(s)
+        # Pass 1: startswith
+        if not matched_lots:
+            for s in ad_cfg.sections():
+                if lot_name_input.startswith(s):
+                    matched_lots.append(s)
+        # Pass 2: substring
+        if not matched_lots:
+            for s in ad_cfg.sections():
+                if s in lot_name_input:
+                    matched_lots.append(s)
+
+        if matched_lots:
+            matched_rule_name = max(matched_lots, key=len)
+            rule_section = ad_cfg[matched_rule_name]
+
+    rule_matched = matched_rule_name is not None
+    conditions.append({
+        "name": "lot_rule_matched",
+        "passed": rule_matched,
+        "details": f"Matched rule '{matched_rule_name}'" if rule_matched else f"No auto-delivery rule found for '{lot_name_input}'",
+    })
+
+    # 4. Проверка активности лота (disable = 0)
+    rule_active = False
+    if rule_section is not None:
+        disabled = rule_section.getboolean("disable", fallback=False)
+        rule_active = not disabled
+        conditions.append({
+            "name": "rule_not_disabled",
+            "passed": rule_active,
+            "details": "Rule is active" if rule_active else f"Auto-delivery is disabled for lot '{matched_rule_name}'",
+        })
+    else:
+        conditions.append({
+            "name": "rule_not_disabled",
+            "passed": False,
+            "details": "No rule matched to check disable status",
+        })
+
+    # 5. Проверка наличия товаров на складе (без списания и мутаций)
+    goods_available = False
+    products_file = None
+    sample_goods: list[str] = []
+    goods_count = 0
+    if rule_section is not None and rule_active:
+        products_file = rule_section.get("productsFileName")
+        if products_file:
+            try:
+                fpath = _get_product_path(products_file)
+                if os.path.exists(fpath):
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        lines = [l.strip() for l in f if l.strip()]
+                    goods_count = len(lines)
+                    sample_goods = lines[:amount]
+                    goods_available = goods_count >= amount
+                    conditions.append({
+                        "name": "goods_availability",
+                        "passed": goods_available,
+                        "details": f"Stock has {goods_count} items (required {amount})" if goods_available else f"Insufficient stock: {goods_count} < {amount}",
+                    })
+                else:
+                    conditions.append({
+                        "name": "goods_availability",
+                        "passed": False,
+                        "details": f"Products file '{products_file}' does not exist on disk",
+                    })
+            except Exception as e:
+                conditions.append({
+                    "name": "goods_availability",
+                    "passed": False,
+                    "details": f"Error accessing products file '{products_file}': {e}",
+                })
+        else:
+            goods_available = True
+            conditions.append({
+                "name": "goods_availability",
+                "passed": True,
+                "details": "No goods file configured (text-only delivery)",
+            })
+    else:
+        conditions.append({
+            "name": "goods_availability",
+            "passed": False,
+            "details": "Rule not active or not matched",
+        })
+
+    success = bool(global_enabled and not bl_blocked and rule_matched and rule_active and goods_available)
+
+    action_preview = None
+    if rule_section is not None:
+        raw_response = rule_section.get("response", "")
+        formatted_resp = raw_response
+        if products_file and sample_goods:
+            formatted_resp = formatted_resp.replace("$product", "\n".join(sample_goods))
+        elif "$product" in formatted_resp:
+            formatted_resp = formatted_resp.replace("$product", "[PREVIEW_PRODUCT_KEY]")
+        formatted_resp = formatted_resp.replace("$order_id", order_id)
+        formatted_resp = formatted_resp.replace("$buyer", buyer_username)
+        formatted_resp = formatted_resp.replace("$username", buyer_username)
+
+        action_preview = {
+            "action": "deliver_product",
+            "delivery_text": formatted_resp,
+            "recipient": buyer_username,
+            "chat_id": chat_id,
+            "products_file": products_file or None,
+            "goods_delivered_count": len(sample_goods) if products_file else 0,
+            "goods_left_estimate": max(0, goods_count - amount) if products_file else None,
+            "sample_goods": sample_goods,
+            "will_deliver": success,
+        }
+
+    return matched_rule_name, conditions, action_preview, success
+
+
+def _simulate_response(cardinal: Any, payload: dict[str, Any]) -> tuple[Optional[str], list[dict[str, Any]], Optional[dict[str, Any]], bool]:
+    conditions: list[dict[str, Any]] = []
+    message_text = str(payload.get("message") or payload.get("text") or payload.get("command") or "")
+    author = str(payload.get("author") or payload.get("username") or payload.get("user") or "TestUser").strip()
+    chat_id = int(payload.get("chat_id", 12345))
+    chat_name = str(payload.get("chat_name") or author)
+
+    # 1. Глобальный переключатель автоответа
+    global_enabled = True
+    if hasattr(cardinal, "MAIN_CFG") and cardinal.MAIN_CFG.has_section("FunPay"):
+        try:
+            global_enabled = cardinal.MAIN_CFG.getboolean("FunPay", "autoResponse", fallback=True)
+        except Exception:
+            global_enabled = True
+    if hasattr(cardinal, "autoresponse_enabled"):
+        global_enabled = bool(global_enabled and cardinal.autoresponse_enabled)
+
+    conditions.append({
+        "name": "global_auto_response",
+        "passed": bool(global_enabled),
+        "details": "Auto-response is enabled globally" if global_enabled else "Auto-response is disabled globally in config",
+    })
+
+    # 2. Проверка чёрного списка
+    bl_blocked = False
+    if hasattr(cardinal, "blacklist") and author in cardinal.blacklist:
+        bl_enabled = True
+        if hasattr(cardinal, "bl_response_enabled"):
+            bl_enabled = cardinal.bl_response_enabled
+        elif hasattr(cardinal, "MAIN_CFG") and cardinal.MAIN_CFG.has_section("BlockList"):
+            bl_enabled = cardinal.MAIN_CFG.getboolean("BlockList", "blockResponse", fallback=True)
+        if bl_enabled:
+            bl_blocked = True
+
+    conditions.append({
+        "name": "user_not_blacklisted",
+        "passed": not bl_blocked,
+        "details": "User is not blacklisted" if not bl_blocked else f"User '{author}' is in blacklist and auto-response is blocked",
+    })
+
+    # 3. Сопоставление команды
+    cmd_clean = message_text.strip().lower()
+    matched_rule_name = None
+    rule_section = None
+
+    ar_cfg = getattr(cardinal, "AR_CFG", None)
+    raw_ar_cfg = getattr(cardinal, "RAW_AR_CFG", None)
+
+    if ar_cfg and hasattr(ar_cfg, "__contains__") and cmd_clean in ar_cfg:
+        matched_rule_name = cmd_clean
+        rule_section = ar_cfg[cmd_clean]
+    elif raw_ar_cfg and hasattr(raw_ar_cfg, "sections"):
+        for section in raw_ar_cfg.sections():
+            variants = [v.strip().lower() for v in section.split("|")]
+            if cmd_clean in variants:
+                matched_rule_name = section
+                rule_section = raw_ar_cfg[section]
+                break
+
+    matched = matched_rule_name is not None
+    conditions.append({
+        "name": "command_matched",
+        "passed": matched,
+        "details": f"Command matched rule '{matched_rule_name}'" if matched else f"No command rule matched for '{message_text}'",
+    })
+
+    # 4. Проверка активности команды
+    cmd_enabled = False
+    if rule_section is not None:
+        cmd_enabled = rule_section.getboolean("enabled", fallback=True)
+        conditions.append({
+            "name": "command_enabled",
+            "passed": cmd_enabled,
+            "details": "Command is enabled" if cmd_enabled else f"Command '{matched_rule_name}' is disabled",
+        })
+    else:
+        conditions.append({
+            "name": "command_enabled",
+            "passed": False,
+            "details": "No command matched to check enabled status",
+        })
+
+    success = bool(global_enabled and not bl_blocked and matched and cmd_enabled)
+
+    action_preview = None
+    if rule_section is not None:
+        resp_text = rule_section.get("response", "")
+        resp_text = resp_text.replace("$username", author).replace("$chat_name", chat_name)
+        # Проверяем RAW_AR_CFG для опций telegramNotification и notificationText
+        raw_sec = None
+        if raw_ar_cfg and hasattr(raw_ar_cfg, "sections"):
+            for section in raw_ar_cfg.sections():
+                variants = [v.strip().lower() for v in section.split("|")]
+                if cmd_clean in variants or (matched_rule_name and matched_rule_name in variants):
+                    raw_sec = raw_ar_cfg[section]
+                    break
+
+        tg_notify = False
+        if hasattr(rule_section, "has_option") and rule_section.has_option("telegramNotification"):
+            tg_notify = rule_section.getboolean("telegramNotification", fallback=False)
+        elif raw_sec and hasattr(raw_sec, "getboolean"):
+            tg_notify = raw_sec.getboolean("telegramNotification", fallback=False)
+
+        ntfc_text = ""
+        if hasattr(rule_section, "get"):
+            ntfc_text = rule_section.get("notificationText", "") or ""
+        if not ntfc_text and raw_sec and hasattr(raw_sec, "get"):
+            ntfc_text = raw_sec.get("notificationText", "") or ""
+
+        if ntfc_text:
+            ntfc_text = ntfc_text.replace("$username", author).replace("$chat_name", chat_name)
+
+        action_preview = {
+            "action": "send_response",
+            "response_text": resp_text,
+            "recipient": author,
+            "chat_id": chat_id,
+            "telegram_notification": tg_notify,
+            "notification_text": ntfc_text if tg_notify else None,
+            "will_respond": success,
+        }
+
+    return matched_rule_name, conditions, action_preview, success
+
+
+def _simulate_greetings(cardinal: Any, payload: dict[str, Any]) -> tuple[Optional[str], list[dict[str, Any]], Optional[dict[str, Any]], bool]:
+    conditions: list[dict[str, Any]] = []
+    username = str(payload.get("username") or payload.get("author") or "NewUser").strip()
+    chat_id = int(payload.get("chat_id", 54321))
+    is_new_chat_payload = payload.get("is_new_chat")
+
+    cfg = getattr(cardinal, "MAIN_CFG", None)
+    greetings_sec = cfg["Greetings"] if cfg and cfg.has_section("Greetings") else None
+
+    # 1. Включены ли приветствия
+    greetings_enabled = False
+    if greetings_sec:
+        greetings_enabled = greetings_sec.getboolean("sendGreetings", fallback=False)
+
+    conditions.append({
+        "name": "greetings_enabled",
+        "passed": greetings_enabled,
+        "details": "Greetings are enabled" if greetings_enabled else "Greetings are disabled in Greetings.sendGreetings",
+    })
+
+    # 2. Проверка onlyNewChats
+    only_new = False
+    is_new_chat_eligible = True
+    if greetings_sec:
+        only_new = greetings_sec.getboolean("onlyNewChats", fallback=False)
+        if only_new:
+            if is_new_chat_payload is not None:
+                is_new_chat_eligible = bool(is_new_chat_payload)
+            else:
+                threshold = getattr(cardinal, "greeting_chat_id_threshold", 0)
+                threshold_ids = getattr(cardinal, "greeting_threshold_chat_ids", set())
+                if chat_id <= threshold or chat_id in threshold_ids:
+                    is_new_chat_eligible = False
+
+    conditions.append({
+        "name": "only_new_chats_check",
+        "passed": is_new_chat_eligible if only_new else True,
+        "details": "Chat eligible for greeting" if (is_new_chat_eligible or not only_new) else "Chat is not considered new (onlyNewChats is active)",
+    })
+
+    # 3. Кулдаун приветствия
+    cooldown_passed = True
+    cooldown_days = 0.0
+    if greetings_sec and not only_new:
+        try:
+            cooldown_days = float(greetings_sec.get("greetingsCooldown", fallback="0"))
+        except ValueError:
+            cooldown_days = 0.0
+        cooldown_sec = cooldown_days * 86400
+        last_time = 0.0
+        if "last_interaction_time" in payload:
+            last_time = float(payload["last_interaction_time"])
+        elif hasattr(cardinal, "old_users") and isinstance(cardinal.old_users, dict):
+            last_time = float(cardinal.old_users.get(chat_id, 0))
+
+        if last_time > 0 and (time.time() - last_time) < cooldown_sec:
+            cooldown_passed = False
+
+    conditions.append({
+        "name": "cooldown_check",
+        "passed": cooldown_passed,
+        "details": "Greeting cooldown satisfied" if cooldown_passed else f"Greeting cooldown active ({cooldown_days} days)",
+    })
+
+    success = bool(greetings_enabled and (is_new_chat_eligible or not only_new) and cooldown_passed)
+    matched_rule_name = "Greetings" if greetings_enabled else None
+
+    action_preview = None
+    if greetings_sec:
+        text = greetings_sec.get("greetingsText", "")
+        text = text.replace("$username", username)
+        action_preview = {
+            "action": "send_greeting",
+            "greeting_text": text,
+            "recipient": username,
+            "chat_id": chat_id,
+            "will_send": success,
+        }
+
+    return matched_rule_name, conditions, action_preview, success
+
+
+def simulate_automation(event_type: str, test_payload: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    """
+    Эмулирует срабатывание автоматизации без сетевых запросов и изменения состояния.
+    Поддерживаемые event_type:
+    - 'auto_delivery', 'delivery', 'order', 'new_order'
+    - 'auto_response', 'response', 'command'
+    - 'greetings', 'greeting'
+    - 'message', 'new_message' (пытается автоответчик, затем приветствие)
+    """
+    t0 = time.perf_counter()
+    cardinal = get_cardinal()
+    payload = test_payload or {}
+    ev_type = (event_type or "").strip().lower()
+
+    if ev_type in ("auto_delivery", "delivery", "order", "new_order"):
+        matched_rule, conditions, action_preview, success = _simulate_delivery(cardinal, payload)
+        category = "auto_delivery"
+    elif ev_type in ("auto_response", "response", "command"):
+        matched_rule, conditions, action_preview, success = _simulate_response(cardinal, payload)
+        category = "auto_response"
+    elif ev_type in ("greetings", "greeting"):
+        matched_rule, conditions, action_preview, success = _simulate_greetings(cardinal, payload)
+        category = "greetings"
+    elif ev_type in ("message", "new_message"):
+        msg = payload.get("message") or payload.get("text") or payload.get("command") or ""
+        cmd_clean = str(msg).strip().lower()
+        has_ar = False
+        if hasattr(cardinal, "AR_CFG") and cardinal.AR_CFG and cmd_clean in cardinal.AR_CFG:
+            has_ar = True
+        elif hasattr(cardinal, "RAW_AR_CFG") and cardinal.RAW_AR_CFG:
+            for s in cardinal.RAW_AR_CFG.sections():
+                if cmd_clean in [v.strip().lower() for v in s.split("|")]:
+                    has_ar = True
+                    break
+        if has_ar:
+            matched_rule, conditions, action_preview, success = _simulate_response(cardinal, payload)
+            category = "auto_response"
+        else:
+            matched_rule, conditions, action_preview, success = _simulate_greetings(cardinal, payload)
+            category = "greetings"
+    else:
+        if "lot_name" in payload or "order_id" in payload:
+            matched_rule, conditions, action_preview, success = _simulate_delivery(cardinal, payload)
+            category = "auto_delivery"
+        elif "command" in payload:
+            matched_rule, conditions, action_preview, success = _simulate_response(cardinal, payload)
+            category = "auto_response"
+        else:
+            matched_rule, conditions, action_preview, success = _simulate_delivery(cardinal, payload)
+            category = "auto_delivery"
+
+    duration_ms = round((time.perf_counter() - t0) * 1000, 2)
+
+    result = {
+        "event_type": event_type,
+        "category": category,
+        "matched_rule": matched_rule,
+        "conditions": conditions,
+        "action_preview": action_preview,
+        "duration_ms": duration_ms,
+        "success": success,
+    }
+
+    trace_record = {
+        "id": str(uuid.uuid4()),
+        "timestamp": time.time(),
+        "event_type": event_type,
+        "category": category,
+        "matched_rule": matched_rule,
+        "conditions": conditions,
+        "action_preview": action_preview,
+        "duration_ms": duration_ms,
+        "success": success,
+        "simulated": True,
+    }
+    record_execution_trace(trace_record)
+
+    return result
+

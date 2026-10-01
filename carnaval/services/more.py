@@ -399,6 +399,8 @@ def remove_from_blacklist(username: str) -> tuple[bool, str]:
 def list_plugins() -> list[dict[str, Any]]:
     """Возвращает список плагинов Cardinal."""
     cardinal = get_cardinal()
+    from carnaval.services.system_mode import is_safe_mode
+    safe = is_safe_mode()
     result = []
     for uuid, pl in cardinal.plugins.items():
         result.append({
@@ -411,6 +413,7 @@ def list_plugins() -> list[dict[str, Any]]:
             "enabled": pl.enabled,
             "pinned": pl.pinned,
             "settings_page": pl.settings_page,
+            "bypassed": safe,
         })
     return result
 
@@ -831,14 +834,30 @@ def create_configs_backup() -> bytes:
     НЕ включает master.key, carnaval_secret.key, sessions, .env, токены.
     """
     buf = io.BytesIO()
+    added_names = set()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        configs_dir = "configs"
-        if os.path.isdir(configs_dir):
-            for root, _dirs, files in os.walk(configs_dir):
+        configs_dirs = []
+        try:
+            from carnaval.paths import CONFIGS_DIR
+            if os.path.isdir(CONFIGS_DIR):
+                configs_dirs.append(CONFIGS_DIR)
+        except Exception:
+            pass
+        if os.path.isdir("configs") and os.path.abspath("configs") not in [os.path.abspath(d) for d in configs_dirs]:
+            configs_dirs.append("configs")
+
+        for cdir in configs_dirs:
+            for root, _dirs, files in os.walk(cdir):
                 for fname in files:
                     lower = fname.lower()
-                    if lower.endswith((".key", ".secret", ".pem")) or "master" in lower or ".env" in lower:
+                    if lower.endswith((".key", ".secret", ".pem")) or "master" in lower or ".env" in lower or "app.db" in lower:
                         continue
+                    fpath = os.path.join(root, fname)
+                    rel = os.path.relpath(fpath, start=cdir)
+                    arcname = os.path.join("configs", rel).replace("\\", "/")
+                    if arcname in added_names:
+                        continue
+                    added_names.add(arcname)
                     if fname == "_main.cfg":
                         try:
                             from configparser import ConfigParser
@@ -857,21 +876,33 @@ def create_configs_backup() -> bytes:
                             zf.writestr(arcname, out_str.getvalue().encode("utf-8"))
                             continue
                         except Exception:
-                            continue
-                    fpath = os.path.join(root, fname)
-                    arcname = os.path.relpath(fpath, start=".")
+                            pass
                     zf.write(fpath, arcname)
 
         # Добавляем storage/products (товары автовыдачи)
-        products_dir = os.path.join("storage", "products")
-        if os.path.isdir(products_dir):
-            for root, _dirs, files in os.walk(products_dir):
+        products_dirs = []
+        try:
+            from carnaval.paths import PRODUCTS_DIR
+            if os.path.isdir(PRODUCTS_DIR):
+                products_dirs.append(PRODUCTS_DIR)
+        except Exception:
+            pass
+        default_prod = os.path.join("storage", "products")
+        if os.path.isdir(default_prod) and os.path.abspath(default_prod) not in [os.path.abspath(d) for d in products_dirs]:
+            products_dirs.append(default_prod)
+
+        for pdir in products_dirs:
+            for root, _dirs, files in os.walk(pdir):
                 for fname in files:
                     lower = fname.lower()
                     if lower.endswith((".key", ".secret", ".pem")):
                         continue
                     fpath = os.path.join(root, fname)
-                    arcname = os.path.relpath(fpath, start=".")
+                    rel = os.path.relpath(fpath, start=pdir)
+                    arcname = os.path.join("storage", "products", rel).replace("\\", "/")
+                    if arcname in added_names:
+                        continue
+                    added_names.add(arcname)
                     zf.write(fpath, arcname)
     buf.seek(0)
     return buf.read()
@@ -914,13 +945,34 @@ def restore_backup(zip_bytes: bytes) -> tuple[bool, str]:
                 if member.startswith("/") or ".." in member:
                     continue
 
-                if member.startswith("configs/") or member.startswith("storage/products/"):
+                if member.startswith("configs/"):
                     zf.extract(member, path=".")
+                    try:
+                        from carnaval.paths import CONFIGS_DIR
+                        sub = member[len("configs/"):]
+                        if sub:
+                            dest_path = os.path.join(CONFIGS_DIR, sub)
+                            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                            with open(dest_path, "wb") as f_out:
+                                f_out.write(zf.read(member))
+                    except Exception:
+                        pass
+                elif member.startswith("storage/products/"):
+                    zf.extract(member, path=".")
+                    try:
+                        from carnaval.paths import PRODUCTS_DIR
+                        sub = member[len("storage/products/"):]
+                        if sub:
+                            dest_path = os.path.join(PRODUCTS_DIR, sub)
+                            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                            with open(dest_path, "wb") as f_out:
+                                f_out.write(zf.read(member))
+                    except Exception:
+                        pass
 
         return True, ""
     except Exception as e:
         logger.error(f"Carnaval.More: ошибка восстановления бэкапа: {e}")
-        return False, f"Ошибка восстановления: {e}"
         return False, str(e)
 
 
