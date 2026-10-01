@@ -66,26 +66,6 @@ def require_telegram_auth(request: Request) -> dict:
 
     session = auth.get_session(token)
     if not session:
-        vt = getattr(auth, "verify_token", None)
-        if vt:
-            v_res = vt(token)
-            if v_res:
-                uid = 12345
-                if isinstance(v_res, dict):
-                    raw_uid = v_res.get("sub") or v_res.get("user_id") or v_res.get("id") or 12345
-                    try:
-                        uid = int(raw_uid)
-                    except Exception:
-                        uid = 12345
-                elif isinstance(v_res, int):
-                    uid = v_res
-                session = {
-                    "telegram_user_id": uid,
-                    "role": "user",
-                    "panel_unlocked": 1,
-                    "session_id_hash": "mock",
-                }
-    if not session:
         raise HTTPException(
             status_code=401,
             detail={"error": "unauthorized", "message": "Сессия недействительна или истекла"}
