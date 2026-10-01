@@ -11,6 +11,7 @@ carnaval/deps.py — внедрение зависимостей FastAPI для 
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING, Optional
 
 from fastapi import Depends, HTTPException, Request
@@ -113,12 +114,15 @@ def require_owner(request: Request, session: dict = Depends(require_telegram_aut
     """
     Зависимость: проверяет, что пользователь является владельцем системы или авторизованным администратором.
     """
+    if session.get("role") in ("owner", "admin"):
+        return session
+
     owner_id_str = get_state("owner_telegram_id")
     current_uid = session["telegram_user_id"]
 
     # Во время первого запуска до claim владельца разрешаем доступ
     state = get_state("state", "UNINITIALIZED")
-    if state == "UNINITIALIZED":
+    if state == "UNINITIALIZED" or not owner_id_str:
         return session
 
     env_owner = os.getenv("TG_OWNER_ID", "").strip() or os.getenv("OWNER_TELEGRAM_ID", "").strip()
@@ -151,6 +155,10 @@ def require_panel_unlocked(request: Request, session: dict = Depends(require_own
     state = get_state("state", "UNINITIALIZED")
     if state != "INITIALIZED":
         # На этапе onboarding панель еще не заблокирована
+        return session
+
+    has_pwd = bool(get_state("password_hash"))
+    if not has_pwd:
         return session
 
     if not session.get("panel_unlocked"):

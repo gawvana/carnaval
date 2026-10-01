@@ -224,7 +224,7 @@ def client(stub_cardinal, monkeypatch):
     # Патчим get_session — всегда авторизован
     monkeypatch.setattr(auth_mod, "get_session", lambda tok: {
         "telegram_user_id": 12345,
-        "role": "user",
+        "role": "owner",
         "panel_unlocked": 1,
         "session_id_hash": "mock",
     })

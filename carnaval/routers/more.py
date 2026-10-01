@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Upl
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
-from carnaval.deps import require_user
+from carnaval.deps import require_user, require_panel_unlocked, require_owner
 from carnaval.services import more as more_svc
 
 router = APIRouter()
@@ -161,11 +161,12 @@ async def toggle_plugin(request: Request, uuid: str, user_id: int = Depends(requ
 @router.post("/more/plugins/upload")
 async def upload_plugin(
     request: Request,
-    user_id: int = Depends(require_user),
+    session: dict = Depends(require_panel_unlocked),
     file: UploadFile = File(...),
     confirm: bool = Form(False),
 ):
     """Загрузка плагина. Требует confirm=true (плагин исполняет произвольный код)."""
+    user_id = int(session["telegram_user_id"])
     if not confirm and not await _check_confirmation(request):
         return JSONResponse(
             {"error": "confirm_required", "message": "Загрузка плагина требует confirm=true. Плагин исполняет произвольный код!"},
@@ -189,10 +190,11 @@ async def upload_plugin(
 async def delete_plugin(
     uuid: str,
     request: Request,
-    user_id: int = Depends(require_user),
+    session: dict = Depends(require_panel_unlocked),
     confirm: bool = Query(False),
 ):
     """Удаление плагина. Требует confirm=true."""
+    user_id = int(session["telegram_user_id"])
     if not await _check_confirmation(request, confirm):
         return JSONResponse(
             {"error": "confirm_required", "message": "Удаление плагина требует confirm=true"},
@@ -264,7 +266,7 @@ async def get_authorized_users(request: Request, user_id: int = Depends(require_
 async def remove_authorized_user(
     target_user_id: int,
     request: Request,
-    user_id: int = Depends(require_user),
+    session: dict = Depends(require_panel_unlocked),
     confirm: bool = Query(False),
 ):
     """
@@ -272,6 +274,7 @@ async def remove_authorized_user(
     Защита: нельзя удалить самого себя, нельзя удалить последнего администратора,
     требуется явное подтверждение confirm=true.
     """
+    user_id = int(session["telegram_user_id"])
     if target_user_id == user_id:
         return JSONResponse(
             {"error": "self_deletion_forbidden", "message": "Нельзя удалить самого себя из администраторов"},
@@ -302,7 +305,8 @@ async def get_account_info(request: Request, user_id: int = Depends(require_user
 
 
 @router.post("/more/account/golden-key")
-async def change_golden_key(request: Request, body: GoldenKeyChange, user_id: int = Depends(require_user)):
+async def change_golden_key(request: Request, body: GoldenKeyChange, session: dict = Depends(require_panel_unlocked)):
+    user_id = int(session["telegram_user_id"])
     if not body.confirm:
         return JSONResponse(
             {"error": "confirm_required", "message": "Смена golden_key требует confirm=true"},
@@ -318,7 +322,8 @@ async def change_golden_key(request: Request, body: GoldenKeyChange, user_id: in
 
 
 @router.delete("/more/account/golden-key")
-async def delete_golden_key_route(request: Request, user_id: int = Depends(require_user), confirm: bool = Query(False)):
+async def delete_golden_key_route(request: Request, session: dict = Depends(require_panel_unlocked), confirm: bool = Query(False)):
+    user_id = int(session["telegram_user_id"])
     if not await _check_confirmation(request, confirm):
         return JSONResponse(
             {"error": "confirm_required", "message": "Удаление golden_key требует confirm=true"},
@@ -369,8 +374,9 @@ async def get_logs(request: Request, n: int = 150, user_id: int = Depends(requir
 
 
 @router.delete("/more/logs")
-async def clear_logs(request: Request, user_id: int = Depends(require_user), confirm: bool = Query(False)):
+async def clear_logs(request: Request, session: dict = Depends(require_panel_unlocked), confirm: bool = Query(False)):
     """Очистка логов. Требует confirm=true."""
+    user_id = int(session["telegram_user_id"])
     if not await _check_confirmation(request, confirm):
         return JSONResponse(
             {"error": "confirm_required", "message": "Очистка логов требует confirm=true"},
@@ -406,11 +412,12 @@ async def download_backup(request: Request, user_id: int = Depends(require_user)
 @router.post("/more/backup/restore")
 async def restore_backup(
     request: Request,
-    user_id: int = Depends(require_user),
+    session: dict = Depends(require_panel_unlocked),
     file: UploadFile = File(...),
     confirm: bool = Form(False),
 ):
     """Восстановление конфигурации из бэкапа. Требует confirm=true."""
+    user_id = int(session["telegram_user_id"])
     if not confirm and not await _check_confirmation(request):
         return JSONResponse(
             {"error": "confirm_required", "message": "Восстановление бэкапа требует confirm=true"},
@@ -431,7 +438,8 @@ async def restore_backup(
 # ─────────────────────────────────────────────────────────────
 
 @router.post("/more/system/restart")
-async def restart(request: Request, body: SystemAction, user_id: int = Depends(require_user)):
+async def restart(request: Request, body: SystemAction, session: dict = Depends(require_panel_unlocked)):
+    user_id = int(session["telegram_user_id"])
     if not body.confirm:
         return JSONResponse(
             {"error": "confirm_required", "message": "Перезапуск требует confirm=true"},
@@ -445,7 +453,8 @@ async def restart(request: Request, body: SystemAction, user_id: int = Depends(r
 
 
 @router.post("/more/system/shutdown")
-async def shutdown(request: Request, body: SystemAction, user_id: int = Depends(require_user)):
+async def shutdown(request: Request, body: SystemAction, session: dict = Depends(require_panel_unlocked)):
+    user_id = int(session["telegram_user_id"])
     if not body.confirm:
         return JSONResponse(
             {"error": "confirm_required", "message": "Выключение требует confirm=true"},
