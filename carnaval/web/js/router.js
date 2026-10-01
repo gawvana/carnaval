@@ -96,9 +96,18 @@ class Router {
       wrap.innerHTML = `<p class="tx" style="padding:32px">Ошибка загрузки</p>`;
     }
 
-    // Scroll-reveal
+    this._observeReveal(wrap);
+  }
+
+  _observeReveal(wrap) {
+    if (!wrap) return;
     const io = new IntersectionObserver((es) => {
-      es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+      es.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.classList.add('in');
+          io.unobserve(e.target);
+        }
+      });
     }, { root: document.getElementById('app'), threshold: .1 });
     wrap.querySelectorAll('.rv').forEach(n => io.observe(n));
   }
@@ -114,6 +123,7 @@ class Router {
     try {
       wrap.innerHTML = '';
       await ROUTES[id](wrap);
+      this._observeReveal(wrap);
     } catch (e) {
       console.error('[router] reload error', e);
     }
