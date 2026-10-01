@@ -7,14 +7,19 @@ export function showToast(msg, type = '') {
   const container = document.getElementById('toasts');
   if (!container) return;
 
+  // Normalize type aliases
+  const typeMap = { 'error': 'err', 'success': 'ok', 'warning': 'warn' };
+  const normalizedType = typeMap[type] || type;
+
   const el = document.createElement('div');
-  el.className = `toast${type ? ` ${type}` : ''}`;
+  el.className = `toast${normalizedType ? ` ${normalizedType}` : ''}`;
+  el.setAttribute('role', 'status');
+  el.setAttribute('aria-live', 'polite');
   el.textContent = msg;
 
-  // Цвет по типу
-  if (type === 'ok')   { el.style.background = 'var(--ok)';   el.style.color = 'var(--on-ok)'; }
-  if (type === 'err')  { el.style.background = 'var(--err)';  el.style.color = 'var(--on-err)'; }
-  if (type === 'warn') { el.style.background = 'var(--warn)'; el.style.color = 'var(--on-warn)'; }
+  if (normalizedType === 'ok')   { el.style.background = 'var(--ok)';   el.style.color = 'var(--on-ok)'; }
+  if (normalizedType === 'err')  { el.style.background = 'var(--err)';  el.style.color = 'var(--on-err)'; }
+  if (normalizedType === 'warn') { el.style.background = 'var(--warn)'; el.style.color = 'var(--on-warn)'; }
 
   container.appendChild(el);
   setTimeout(() => {
