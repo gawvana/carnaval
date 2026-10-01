@@ -268,6 +268,13 @@ def test_replace_emojis_with_tg_emoji():
     # Эмодзи внутри <code> не должен меняться
     assert "<code>KEY-123 🔑</code>" in converted
 
+    # Проверка на отсутствие двойного оборачивания вариативных эмодзи (например ⚙️ и ⚙)
+    var_raw = "Настройки ⚙️ и еще ⚙"
+    var_conv = replace_emojis_with_tg_emoji(var_raw)
+    assert "<tg-emoji><tg-emoji" not in var_conv
+    assert f'<tg-emoji emoji-id="{PREMIUM["⚙️"]}">⚙️</tg-emoji>' in var_conv
+    assert f'<tg-emoji emoji-id="{PREMIUM["⚙"]}">⚙</tg-emoji>' in var_conv
+
 
 def test_inline_keyboard_button_patch():
     """InlineKeyboardButton корректно сериализует icon_custom_emoji_id в to_dict()."""

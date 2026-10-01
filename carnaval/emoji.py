@@ -192,7 +192,10 @@ def replace_emojis_with_tg_emoji(text: str) -> str:
         if em in processed and not em.isalnum():
             eid = PREMIUM[em]
             replacement = f'<tg-emoji emoji-id="{eid}">{em}</tg-emoji>'
-            processed = processed.replace(em, replacement)
+            while em in processed:
+                idx = len(placeholders)
+                placeholders.append(replacement)
+                processed = processed.replace(em, f"___PROTECTED_TAG_{idx}___", 1)
 
     # Восстанавливаем защищённые теги
     for i, tag in enumerate(placeholders):
