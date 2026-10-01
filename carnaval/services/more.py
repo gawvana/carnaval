@@ -477,20 +477,32 @@ def remove_authorized_user(user_id: int) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 def get_account_info() -> dict[str, Any]:
-    """Возвращает маскированную информацию об аккаунте FunPay."""
+    """Возвращает маскированную информацию об аккаунте FunPay и статус подключения."""
     cardinal = get_cardinal()
     acc = getattr(cardinal, "account", None)
 
     username = getattr(acc, "username", None) or ""
     user_id = getattr(acc, "id", None) or 0
     from carnaval.secrets_manager import SecretManager
-    has_key = SecretManager.has_secret("golden_key") or bool(getattr(acc, "golden_key", ""))
+    has_key = (
+        SecretManager.has_secret("golden_key")
+        or bool(getattr(acc, "golden_key", ""))
+        or bool(os.getenv("FUNPAY_GOLDEN_KEY", "").strip())
+        or bool(os.getenv("GOLDEN_KEY", "").strip())
+    )
+
+    from carnaval.services.account_lifecycle import lifecycle_manager
+    st = lifecycle_manager.get_status()
 
     return {
         "username": username,
         "id": user_id,
+        "state": st.get("state", "NO_KEY"),
+        "is_ready": st.get("is_ready", False),
+        "is_connected": st.get("is_connected", False),
         "golden_key_configured": has_key,
         "golden_key_masked": "••••••••••••••••" if has_key else "",
+        "error": st.get("error"),
     }
 
 

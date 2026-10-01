@@ -160,6 +160,11 @@ export async function request(method, path, options = {}) {
   } catch (err) {
     clearTimeout(timer);
 
+    // Не повторяем, если запрос был отменен
+    if (err.name === 'AbortError') {
+      throw err;
+    }
+
     // Авто-повтор GET запросов при сетевых ошибках
     if (retries > 0 && err.name !== 'ApiError') {
       console.warn(`[API] Сетевой сбой на ${method} ${path}, повтор через 500мс...`);

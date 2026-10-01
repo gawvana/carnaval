@@ -9,6 +9,7 @@ import { router } from './router.js';
 import { initLocale, t } from './i18n.js';
 import { hideSplash } from './ui/splash.js';
 import { initGlassEffect } from './ui/glass.js';
+import { initQualityTier } from './ui/tier.js';
 import { initSheet } from './ui/sheet.js';
 import { startSSE, onEvent, onConnectionStatus } from './sse.js';
 import { showToast } from './ui/toast.js';
@@ -34,7 +35,8 @@ async function main() {
   const hasInitData = Boolean(tg.initData && tg.initData.trim());
   const isDev = Boolean(typeof window !== 'undefined' && window.__CARNAVAL_DEV);
 
-  // Инициализация глобальных UI компонентов (стекло, шторка)
+  // Инициализация глобальных UI компонентов (профиль качества, стекло, шторка)
+  initQualityTier();
   initGlassEffect();
   initSheet();
 

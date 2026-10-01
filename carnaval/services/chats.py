@@ -42,9 +42,11 @@ async def get_chats(update: bool = False) -> list[dict[str, Any]]:
     cardinal = get_cardinal()
     acc = cardinal.account
     if not acc or not getattr(acc, "is_initiated", False):
-        if acc and getattr(acc, "golden_key", None):
+        from carnaval.services.account_lifecycle import lifecycle_manager
+        status = lifecycle_manager.get_status()
+        if status.get("has_key"):
             try:
-                await asyncio.to_thread(cardinal.reinit_account)
+                await lifecycle_manager.reconnect_account()
             except Exception:
                 pass
         if not acc or not getattr(acc, "is_initiated", False):

@@ -13,6 +13,7 @@ import * as api from '../api.js';
 import { openConfirmSheet, openSheet, closeSheet } from '../ui/sheet.js';
 import { showToast } from '../ui/toast.js';
 import { tg, haptic } from '../tg.js';
+import { getQualityTier, setQualityTier, QUALITY_TIERS } from '../ui/tier.js';
 
 // ── Определение категорий ────────────────────────────────────────────────────
 
@@ -1000,6 +1001,23 @@ async function renderSystem(body) {
       </div>
     </div>
 
+    <!-- Графика и производительность -->
+    <div class="more-content-card">
+      <div class="more-card-title">Производительность и графика</div>
+      <div class="more-item-sub" style="margin-bottom:12px">Адаптивный профиль рендеринга для плавной работы и экономии аккумулятора</div>
+      <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:8px" id="tier-selector">
+        <button type="button" class="more-btn-sm press tier-btn" data-tier="SAVER" style="height:40px;font-size:12px">
+          🔋 Эко
+        </button>
+        <button type="button" class="more-btn-sm press tier-btn" data-tier="BALANCED" style="height:40px;font-size:12px">
+          ⚖️ Баланс
+        </button>
+        <button type="button" class="more-btn-sm press tier-btn" data-tier="HIGH" style="height:40px;font-size:12px">
+          ✨ Ультра
+        </button>
+      </div>
+    </div>
+
     <!-- Логи Cardinal -->
     <div class="more-content-card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
@@ -1014,6 +1032,27 @@ async function renderSystem(body) {
       </div>
     </div>
   `;
+
+  // Quality Tier переключатель
+  const updateTierButtons = () => {
+    const active = getQualityTier();
+    body.querySelectorAll('.tier-btn').forEach((btn) => {
+      const isCur = btn.dataset.tier === active;
+      btn.style.background = isCur ? 'var(--primary)' : 'var(--track)';
+      btn.style.color = isCur ? 'var(--on-primary)' : 'var(--on)';
+      btn.style.fontWeight = isCur ? '700' : '500';
+    });
+  };
+  updateTierButtons();
+
+  body.querySelectorAll('.tier-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      haptic('impact', 'light');
+      setQualityTier(btn.dataset.tier);
+      updateTierButtons();
+      showToast(`Профиль графики: ${btn.textContent.trim()}`, 'success');
+    });
+  });
 
   // Рестарт Cardinal
   body.querySelector('#restart-btn')?.addEventListener('click', () => {

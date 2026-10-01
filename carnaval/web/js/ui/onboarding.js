@@ -135,14 +135,25 @@ export async function renderOnboarding(container, onComplete) {
           showToast('Golden Key должен содержать ровно 32 символа', 'error');
           return;
         }
+        const btn = document.getElementById('step3-gk-btn');
+        const origText = btn ? btn.textContent : '';
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = 'Подключение к FunPay…';
+        }
         haptic('impact', 'medium');
         try {
           await api.setupGoldenKey(key);
-          showToast('Golden Key зашифрован и сохранён', 'success');
+          showToast('Аккаунт FunPay успешно верифицирован и подключен!', 'success');
           step = 4;
           renderStep();
         } catch (err) {
-          showToast(err.message || 'Ошибка сохранения ключа', 'error');
+          showToast(err.message || 'Не удалось подключить аккаунт FunPay', 'error');
+        } finally {
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = origText || 'Сохранить и продолжить';
+          }
         }
       });
 

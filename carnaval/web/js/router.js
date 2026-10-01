@@ -32,6 +32,8 @@ class Router {
   constructor() {
     this._current = null;
     this._dock = null;
+    this._abortController = null;
+    this._unmountCurrent = null;
   }
 
   async init() {
@@ -81,6 +83,21 @@ class Router {
 
   async navigate(id) {
     if (id === this._current) return;
+
+    if (this._abortController) {
+      try {
+        this._abortController.abort('Navigation');
+      } catch (e) {}
+    }
+    this._abortController = new AbortController();
+
+    if (typeof this._unmountCurrent === 'function') {
+      try {
+        this._unmountCurrent();
+      } catch (e) {}
+      this._unmountCurrent = null;
+    }
+
     this._current = id;
     location.hash = id;
     this._dock?.setActive(id);
@@ -90,8 +107,12 @@ class Router {
     wrap.innerHTML = '';
 
     try {
-      await ROUTES[id](wrap);
+      const cleanup = await ROUTES[id](wrap, { signal: this._abortController.signal });
+      if (typeof cleanup === 'function') {
+        this._unmountCurrent = cleanup;
+      }
     } catch (e) {
+      if (e?.name === 'AbortError' || e?.message === 'Navigation') return;
       console.error('[router] render error', e);
       wrap.innerHTML = `<p class="tx" style="padding:32px">Ошибка загрузки</p>`;
     }

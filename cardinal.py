@@ -677,9 +677,9 @@ class Cardinal(object):
             Thread(target=self.telegram.run, daemon=True).start()
 
         self.__init_account()
-        if getattr(self.account, "golden_key", None) and (getattr(self.account, "is_authorized", False) or getattr(self.account, "id", None)):
+        if getattr(self.account, "golden_key", None) and (getattr(self.account, "is_initiated", False) or getattr(self.account, "id", None)):
             self.runner = FunPayAPI.Runner(self.account, self.old_mode_enabled)
-            self.__update_profile()
+            self.__update_profile(infinite_polling=False, attempts=2)
         else:
             self.runner = None
             logger.info("FunPay Runner ожидает настройки Golden Key через Mini App.")
@@ -735,13 +735,23 @@ class Cardinal(object):
         try:
             logger.info("FunPay: авторизация на funpay.com через Account.get(update_phpsessid=True)...")
             self.account.get(update_phpsessid=True)
-            self.balance = self.get_balance()
+            try:
+                self.balance = self.get_balance()
+            except Exception as bal_err:
+                logger.warning(f"FunPay: не удалось получить баланс через лоты ({bal_err}), используем базовый баланс.")
+                self.balance = getattr(self.account, "total_balance", 0)
+
             if self.runner is None:
                 self.runner = FunPayAPI.Runner(self.account, self.old_mode_enabled)
                 Thread(target=self.runner.loop, daemon=True).start()
                 Thread(target=self.lots_raise_loop, daemon=True).start()
                 Thread(target=self.update_session_loop, daemon=True).start()
-            self.__update_profile()
+
+            try:
+                self.__update_profile(infinite_polling=False, attempts=2)
+            except Exception as prof_err:
+                logger.warning(f"FunPay: не удалось обновить профиль ({prof_err}).")
+
             self.running = True
             logger.info(f"FunPay: аккаунт {self.account.username} (ID: {self.account.id}) успешно активирован!")
             return True
