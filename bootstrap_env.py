@@ -56,8 +56,8 @@ def bootstrap() -> bool:
     user_agent = os.getenv("FUNPAY_USER_AGENT", DEFAULT_UA).strip()
     tg_password = os.getenv("TG_PANEL_PASSWORD", "").strip()
     if not tg_password:
-        tg_password = "CarnavalAdmin2026!"
-        logger.info(f"BootstrapEnv: TG_PANEL_PASSWORD не указан. Установлен пароль по умолчанию для Telegram ПУ: {tg_password}")
+        tg_password = secrets.token_urlsafe(16)
+        logger.info("BootstrapEnv: TG_PANEL_PASSWORD не указан. Сгенерирован безопасный случайный пароль для Telegram ПУ.")
     secret_hash = hash_password(tg_password)
 
     port = os.getenv("PORT") or os.getenv("CARNAVAL_PORT", "5000")
