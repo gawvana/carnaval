@@ -221,8 +221,13 @@ def client(stub_cardinal, monkeypatch):
     from carnaval.routers.more import router as more_router
     from carnaval import auth as auth_mod
 
-    # Патчим verify_token — всегда авторизован
-    monkeypatch.setattr(auth_mod, "verify_token", lambda tok: {"sub": "test_user"})
+    # Патчим get_session — всегда авторизован
+    monkeypatch.setattr(auth_mod, "get_session", lambda tok: {
+        "telegram_user_id": 12345,
+        "role": "user",
+        "panel_unlocked": 1,
+        "session_id_hash": "mock",
+    })
 
     # Патчим cache_blacklist в сервисе
     import carnaval.services.more as svc
