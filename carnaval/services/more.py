@@ -514,6 +514,22 @@ def change_golden_key(new_key: str, confirm: bool = False) -> tuple[bool, str]:
             cardinal.save_config(cardinal.MAIN_CFG, "configs/_main.cfg")
         except Exception:
             pass
+
+    # Запускаем переподключение FunPay в фоновом потоке
+    try:
+        import threading
+        if hasattr(cardinal, 'reinit_account'):
+            def _reinit():
+                try:
+                    success = cardinal.reinit_account()
+                    if not success:
+                        pass # logger.warning("reinit_account вернул False")
+                except Exception as e:
+                    pass # logger.error(f"ошибка reinit_account: {e}")
+            threading.Thread(target=_reinit, daemon=True, name="Carnaval-Reinit").start()
+    except Exception:
+        pass
+
     return True, ""
 
 

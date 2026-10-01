@@ -152,6 +152,24 @@ def configure_golden_key(telegram_user_id: int, golden_key: str, ip: str = "") -
     except Exception as e:
         logger.debug(f"Carnaval.Setup: Cardinal не запущен или не обновлен: {e}")
 
+    # Запускаем переподключение FunPay в фоновом потоке
+    try:
+        import threading
+        cardinal = get_cardinal()
+        if cardinal and hasattr(cardinal, 'reinit_account'):
+            def _reinit():
+                try:
+                    success = cardinal.reinit_account()
+                    if success:
+                        logger.info("Carnaval.Setup: FunPay аккаунт успешно активирован через Mini App")
+                    else:
+                        logger.warning("Carnaval.Setup: reinit_account вернул False (ключ невалиден или сеть недоступна)")
+                except Exception as e:
+                    logger.error(f"Carnaval.Setup: ошибка reinit_account: {e}")
+            threading.Thread(target=_reinit, daemon=True, name="Carnaval-Reinit").start()
+    except Exception as e:
+        logger.debug(f"Carnaval.Setup: не удалось запустить reinit_account: {e}")
+
     log_audit("golden_key_configured", telegram_user_id, ip, "Golden Key успешно зашифрован и сохранен")
     return True, ""
 
