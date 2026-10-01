@@ -543,3 +543,123 @@ def test_search_api_endpoint(mock_cardinal_env):
     res_alias = client.get("/api/search?query=Gold", headers=headers)
     assert res_alias.status_code == 200
     assert res_alias.json()["query"] == "Gold"
+
+
+def test_automation_rules_api_crud_and_cardinal_sync(mock_cardinal_env):
+    """Тестирование CRUD для /api/automation/rules и синхронизации с конфигурацией Cardinal."""
+    app = build_app()
+    client = TestClient(app)
+    token = auth.create_token(12345)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 1. GET /api/automation/rules — получение списка правил
+    res_list = client.get("/api/automation/rules", headers=headers)
+    assert res_list.status_code == 200
+    data = res_list.json()
+    assert "rules" in data
+    assert isinstance(data["rules"], list)
+
+    # 2. POST /api/automation/rules — сохранение нового воркфлоу
+    new_workflow = {
+        "id": "wf_test_delivery_vip",
+        "name": "Автовыдача VIP Ключ",
+        "enabled": True,
+        "category": "auto_delivery",
+        "nodes": [
+            {
+                "id": "node_1",
+                "type": "trigger",
+                "event_type": "order_created",
+                "label": "Новый заказ на VIP",
+                "params": {"lot_name": "Steam Random Key"},
+            },
+            {
+                "id": "node_2",
+                "type": "condition",
+                "condition": "blacklist_check",
+                "label": "Проверка покупателя",
+                "params": {},
+            },
+            {
+                "id": "node_3",
+                "type": "condition",
+                "condition": "lot_active",
+                "label": "Лот активен",
+                "params": {},
+            },
+            {
+                "id": "node_4",
+                "type": "action",
+                "action": "deliver_product",
+                "label": "Выдача ключа",
+                "params": {
+                    "lot_name": "Steam Random Key",
+                    "response": "Ваш VIP ключ: $product",
+                    "productsFileName": "keys.txt",
+                },
+            },
+            {
+                "id": "node_5",
+                "type": "notification",
+                "action": "send_notification",
+                "label": "Уведомление в TG",
+                "params": {"text": "VIP заказ выдан"},
+            },
+        ],
+    }
+
+    res_post = client.post("/api/automation/rules", json=new_workflow, headers=headers)
+    assert res_post.status_code == 200
+    saved = res_post.json()
+    assert saved["id"] == "wf_test_delivery_vip"
+    assert saved["name"] == "Автовыдача VIP Ключ"
+    assert len(saved["nodes"]) == 5
+
+    # 3. GET /api/automation/rules/{id}
+    res_get = client.get("/api/automation/rules/wf_test_delivery_vip", headers=headers)
+    assert res_get.status_code == 200
+    assert res_get.json()["id"] == "wf_test_delivery_vip"
+
+    # 4. PATCH /api/automation/rules/{id} — отключение воркфлоу
+    res_patch = client.patch("/api/automation/rules/wf_test_delivery_vip", json={"enabled": False}, headers=headers)
+    assert res_patch.status_code == 200
+    assert res_patch.json()["enabled"] is False
+
+    # 5. DELETE /api/automation/rules/{id} без confirm=true -> 400
+    res_del_fail = client.delete("/api/automation/rules/wf_test_delivery_vip", headers=headers)
+    assert res_del_fail.status_code == 400
+
+    # 6. DELETE /api/automation/rules/{id}?confirm=true -> 200
+    res_del_ok = client.delete("/api/automation/rules/wf_test_delivery_vip?confirm=true", headers=headers)
+    assert res_del_ok.status_code == 200
+    assert res_del_ok.json()["success"] is True
+
+
+def test_automation_simulation_new_event_types(mock_cardinal_env):
+    """Проверка работы simulate_automation с новыми именами типов событий."""
+    # order_created
+    sim_order = auto_svc.simulate_automation("order_created", {
+        "lot_name": "Steam Random Key",
+        "buyer_username": "GoodBuyer",
+        "order_id": "ORD-777",
+    })
+    assert sim_order["success"] is True
+    assert sim_order["category"] == "auto_delivery"
+    assert sim_order["action_preview"]["action"] == "deliver_product"
+
+    # command_received
+    # Добавим команду !stock в RAW_AR_CFG
+    cardinal = mock_cardinal_env
+    cardinal.RAW_AR_CFG = configparser.ConfigParser()
+    cardinal.RAW_AR_CFG.read_string("[!stock]\nresponse = Товары в наличии\nenabled = 1\ntelegramNotification = 0\n")
+    cardinal.AR_CFG = cardinal.RAW_AR_CFG
+
+    sim_cmd = auto_svc.simulate_automation("command_received", {
+        "command": "!stock",
+        "message": "!stock",
+        "author": "Buyer123",
+    })
+    assert sim_cmd["success"] is True
+    assert sim_cmd["category"] == "auto_response"
+    assert sim_cmd["matched_rule"] == "!stock"
+

@@ -204,7 +204,7 @@ function navigate(hash) {
 }
 
 function triggerReconnect() {
-  api.request('POST', '/api/account/reconnect', { allowRelogin: false })
+  api.request('POST', '/api/setup/reconnect', { allowRelogin: false })
     .then(() => {
       import('./toast.js').then(m => m.showToast('Запущен процесс переподключения FunPay', 'ok'));
     })
@@ -214,7 +214,7 @@ function triggerReconnect() {
 }
 
 function triggerBackup() {
-  api.request('POST', '/api/backup', { allowRelogin: false })
+  api.request('POST', '/api/more/backup', { allowRelogin: false })
     .then(() => {
       import('./toast.js').then(m => m.showToast('Резервная копия успешно создана', 'ok'));
     })

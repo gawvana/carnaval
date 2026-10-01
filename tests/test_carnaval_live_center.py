@@ -597,3 +597,61 @@ def test_api_without_auth_headers_accessible(client):
     res = client.get("/api/live/metrics")
     assert res.status_code == 200
     assert res.json()["ok"] is True
+
+
+def test_health_account_strict_validation_is_initiated_false(mock_cardinal, monkeypatch):
+    """Если acc.is_initiated is False, connection_state никогда не должен быть 'ready'."""
+    mock_cardinal.account.is_initiated = False
+    monkeypatch.setattr(live_svc, "_safe_get_cardinal", lambda: mock_cardinal)
+
+    telemetry = live_svc.get_live_telemetry()
+    assert telemetry["funpay"]["connection_state"] != "ready"
+    assert telemetry["funpay"]["connection_state"] in ("connecting", "failed", "disconnected")
+
+
+def test_health_account_strict_validation_invalid_id(mock_cardinal, monkeypatch):
+    """Если acc.id None, 0 или отрицательный, connection_state не может быть 'ready'."""
+    mock_cardinal.account.is_initiated = True
+    for bad_id in (None, 0, -1, "invalid_id"):
+        mock_cardinal.account.id = bad_id
+        monkeypatch.setattr(live_svc, "_safe_get_cardinal", lambda: mock_cardinal)
+
+        telemetry = live_svc.get_live_telemetry()
+        assert telemetry["funpay"]["connection_state"] != "ready", f"Failed for bad_id={bad_id}"
+
+
+def test_health_account_strict_validation_failed_lifecycle(mock_cardinal, monkeypatch):
+    """Если lifecycle_manager сообщает FAILED, connection_state должен быть 'failed', а не 'ready'."""
+    from carnaval.services.account_lifecycle import lifecycle_manager, AccountState
+    mock_cardinal.account.is_initiated = True
+    mock_cardinal.account.id = 998877
+
+    old_state = lifecycle_manager.state
+    try:
+        lifecycle_manager.state = AccountState.FAILED
+        monkeypatch.setattr(live_svc, "_safe_get_cardinal", lambda: mock_cardinal)
+
+        telemetry = live_svc.get_live_telemetry()
+        assert telemetry["funpay"]["connection_state"] == "failed"
+    finally:
+        lifecycle_manager.state = old_state
+
+
+def test_health_account_strict_validation_fully_ready(mock_cardinal, monkeypatch):
+    """Когда все условия выполнены строго, connection_state = 'ready'."""
+    from carnaval.services.account_lifecycle import lifecycle_manager, AccountState
+    mock_cardinal.account.is_initiated = True
+    mock_cardinal.account.id = 778899
+    mock_cardinal.running = True
+
+    old_state = lifecycle_manager.state
+    try:
+        lifecycle_manager.state = AccountState.READY
+        monkeypatch.setattr(live_svc, "_safe_get_cardinal", lambda: mock_cardinal)
+
+        telemetry = live_svc.get_live_telemetry()
+        assert telemetry["funpay"]["connection_state"] == "ready"
+        assert telemetry["funpay"]["user"]["id"] == 778899
+    finally:
+        lifecycle_manager.state = old_state
+

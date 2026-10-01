@@ -13,6 +13,7 @@ import { initQualityTier } from './ui/tier.js';
 import { initSheet } from './ui/sheet.js';
 import { startSSE, onEvent, onConnectionStatus } from './sse.js';
 import { showToast } from './ui/toast.js';
+import { getIcon } from './ui/icons.js';
 import { renderOnboarding, openPanelUnlockModal } from './ui/onboarding.js';
 
 document.documentElement.classList.add('js');
@@ -125,17 +126,17 @@ async function startAppDashboard() {
   onEvent((ev) => {
     if (ev.type === 'order.new') {
       const buyer = ev.data?.buyer_username || ev.data?.username || 'покупателя';
-      showToast(`📦 Новый заказ #${ev.data?.order_id || ''} от ${buyer}`, 'ok');
+      showToast(`Новый заказ #${ev.data?.order_id || ''} от ${buyer}`, 'ok');
       tg.haptic.notification('success');
     } else if (ev.type === 'message.new') {
       const sender = ev.data?.chat_name || ev.data?.author || 'Чат';
-      showToast(`💬 ${sender}: ${ev.data?.text || ''}`.slice(0, 60), 'info');
+      showToast(`${sender}: ${ev.data?.text || ''}`.slice(0, 60), 'info');
       tg.haptic.impact('light');
     } else if (ev.type === 'lots.raised') {
-      showToast('🚀 Лоты успешно подняты!', 'ok');
+      showToast('Лоты успешно подняты!', 'ok');
       tg.haptic.notification('success');
     } else if (ev.type === 'delivery.done') {
-      showToast(`📦 Товар выдан: ${ev.data?.product || ''}`, 'ok');
+      showToast(`Товар выдан: ${ev.data?.product || ''}`, 'ok');
       tg.haptic.notification('success');
     }
   });
@@ -215,8 +216,8 @@ function renderBackendUnavailableScreen(err) {
           Сервер бэкенда на Infrlo запускается или временно недоступен ${statusMsg}.<br>
           Если контейнер перезапускается, подождите несколько секунд и обновите.
         </p>
-        <button class="btn press" id="retry-connect-btn" style="width: 100%; background: var(--primary); color: var(--on-primary); margin-bottom: 12px">
-          🔄 Повторить попытку
+        <button class="btn press" id="retry-connect-btn" style="width: 100%; background: var(--primary); color: var(--on-primary); margin-bottom: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 8px">
+          ${getIcon('refresh', 'icon-sm')} Повторить попытку
         </button>
         <button class="btn press" id="open-bot-btn-err" style="width: 100%; background: transparent; border: 1px solid var(--border); color: var(--fg)">
           Вернуться в чат с ботом

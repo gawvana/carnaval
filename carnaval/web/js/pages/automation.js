@@ -17,6 +17,7 @@ import { tg } from '../tg.js';
 import { renderHeader } from '../ui/header.js';
 import { openSheet, closeSheet, openConfirmSheet } from '../ui/sheet.js';
 import { showToast } from '../ui/toast.js';
+import { getIcon } from '../ui/icons.js';
 
 let _activeTab = 'delivery'; // 'delivery' | 'files' | 'commands' | 'templates'
 
@@ -632,7 +633,7 @@ async function renderTemplatesSection(container) {
               <div style="font-size:14px; flex:1; margin-right:12px">${t.text}</div>
               <div style="display:flex; gap:6px; flex:none">
                 <button class="btn tn press edit-tmpl-btn" data-index="${t.index}" style="height:28px; font-size:11px; padding:0 8px">Изменить</button>
-                <button class="btn err press del-tmpl-btn" data-index="${t.index}" style="height:28px; font-size:11px; padding:0 8px">✕</button>
+                <button class="btn err press del-tmpl-btn" data-index="${t.index}" style="height:28px; font-size:11px; padding:0 8px; display:inline-flex; align-items:center; justify-content:center" aria-label="Удалить">${getIcon('close', 'icon-xs')}</button>
               </div>
             </div>
           `).join('')}

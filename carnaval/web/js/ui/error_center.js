@@ -17,7 +17,7 @@ const ERROR_MAP = {
     actionIcon: 'reconnect',
     onAction: async () => {
       try {
-        await api.request('POST', '/api/account/reconnect', { allowRelogin: false });
+        await api.request('POST', '/api/setup/reconnect', { allowRelogin: false });
         showToast('Запрос на переподключение отправлен', 'ok');
       } catch (e) {
         showToast('Ошибка переподключения: ' + (e.message || e), 'err');

@@ -50,17 +50,20 @@ async function loadUpdatesData() {
     const current = await api.request('GET', '/api/updates/current', { allowRelogin: false });
     renderUpdateCenterUI(contentEl, current);
   } catch (e) {
-    // Fallback if update router is being compiled
-    const fallbackCurrent = {
-      app_version: '2.1.0',
-      backend_version: '2.1.0',
-      cardinal_version: '0.4.0',
-      schema_version: 3,
-      channel: 'stable',
-      safe_mode: false,
-      maintenance_mode: false
-    };
-    renderUpdateCenterUI(contentEl, fallbackCurrent);
+    contentEl.innerHTML = `
+      <div class="liquid-glass" style="padding: 24px; text-align: center; border-radius: var(--r2);">
+        <span style="color: var(--err);">${getIcon('alert', 'icon-lg')}</span>
+        <p style="color: var(--on); margin: 12px 0 6px 0; font-weight: 600; font-size: 14px;">Не удалось загрузить данные обновлений</p>
+        <span style="color: var(--muted); font-size: 12px; display: block; margin-bottom: 14px;">${escapeHtml(e.message || 'Ошибка соединения с сервером')}</span>
+        <button id="retry-load-btn" class="btn btn-sm btn-primary spring-tap" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: var(--r1); font-size: 13px; cursor: pointer;">
+          ${getIcon('refresh', 'icon-xs')} Повторить
+        </button>
+      </div>
+    `;
+    contentEl.querySelector('#retry-load-btn')?.addEventListener('click', () => {
+      contentEl.innerHTML = '<div class="shimmer" style="height: 120px; border-radius: var(--r2);"></div>';
+      loadUpdatesData();
+    });
   }
 }
 
@@ -164,7 +167,7 @@ function renderUpdateCenterUI(contentEl, info) {
 
   contentEl.querySelector('#create-backup-btn').addEventListener('click', async () => {
     try {
-      await api.request('POST', '/api/backup', { allowRelogin: false });
+      await api.request('POST', '/api/more/backup', { allowRelogin: false });
       showToast('Резервная копия создана', 'ok');
     } catch (e) {
       showToast('Ошибка бэкапа: ' + (e.message || e), 'err');
@@ -188,17 +191,26 @@ async function checkForUpdates() {
   try {
     const res = await api.request('POST', '/api/updates/check', { allowRelogin: false });
     if (res && res.update_available) {
-      showToast(`Найдено обновление: v${res.version}`, 'ok');
+      const latestVer = res.latest_version || res.manifest?.version;
+      showToast(`Найдено обновление: v${latestVer}`, 'ok');
       // Обновляем карточку
       const statusCard = container.querySelector('#update-status-card');
       if (statusCard) {
+        const manifest = res.manifest || {};
+        const releaseNotes = typeof manifest.release_notes === 'string'
+          ? manifest.release_notes
+          : manifest.release_notes?.highlights || 'Улучшения производительности и стабильности рантайма.';
+        const sizeStr = manifest.artifact_size
+          ? `${(manifest.artifact_size / (1024 * 1024)).toFixed(1)} MB`
+          : '2.4 MB';
+
         statusCard.innerHTML = `
           <div style="display: flex; justify-content: space-between; align-items: center;">
-            <strong style="color: var(--primary); font-size: 14px;">Доступно обновление: v${escapeHtml(res.version)}</strong>
-            <span style="font-size: 11px; color: var(--muted);">${escapeHtml(res.size_str || '2.4 MB')}</span>
+            <strong style="color: var(--primary); font-size: 14px;">Доступно обновление: v${escapeHtml(latestVer)}</strong>
+            <span style="font-size: 11px; color: var(--muted);">${escapeHtml(sizeStr)}</span>
           </div>
           <div style="font-size: 12px; color: var(--muted); margin: 8px 0; line-height: 1.4;">
-            ${escapeHtml(res.release_notes?.highlights || 'Улучшения производительности и стабильности рантайма.')}
+            ${escapeHtml(releaseNotes)}
           </div>
           <button id="install-update-btn" class="btn btn-sm btn-primary spring-tap" style="width: 100%; margin-top: 8px; padding: 10px; border-radius: var(--r1); font-size: 13px; font-weight: 600; cursor: pointer;">
             ${getIcon('download-update', 'icon-sm')} Установить обновление
@@ -208,7 +220,7 @@ async function checkForUpdates() {
         statusCard.querySelector('#install-update-btn').addEventListener('click', async () => {
           showToast('Загрузка артефакта и создание резервной копии...', 'ok');
           try {
-            await api.request('POST', '/api/updates/install', { version: res.version }, { allowRelogin: false });
+            await api.request('POST', '/api/updates/install', { version: res.latest_version }, { allowRelogin: false });
             showToast('Обновление успешно установлено! Система перезапускается...', 'ok');
             setTimeout(() => window.location.reload(), 2000);
           } catch (e) {

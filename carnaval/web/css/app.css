@@ -1,6 +1,6 @@
 /*
   app.css — базовые стили Carnaval Mini App.
-  Компоненты: glass, press, nav, dock, fab, sheet, aurora, splash, cards, switches.
+  Компоненты: glass, press, nav, dock, sheet, aurora, splash, cards, switches.
   Всё из Mattering v2. Никакого Tailwind, никаких CDN.
 */
 
@@ -204,6 +204,13 @@ body.open #app {
   visibility: hidden !important;
   opacity: 0 !important;
 }
+
+/* ── SVG Icon Helper Utilities ────────────────────── */
+.icon-xs { width: 14px !important; height: 14px !important; }
+.icon-sm { width: 18px !important; height: 18px !important; }
+.icon-md { width: 22px !important; height: 22px !important; }
+.icon-lg { width: 28px !important; height: 28px !important; }
+.icon-xl { width: 36px !important; height: 36px !important; }
 
 /* ── Mobile Chat Overhaul ──────────────────────────── */
 body.in-chat-thread .chrome {

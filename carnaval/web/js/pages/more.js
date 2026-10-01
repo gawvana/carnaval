@@ -868,7 +868,12 @@ async function renderSecurity(body) {
 
     <!-- Авторизованные пользователи Telegram -->
     <div class="more-content-card">
-      <div class="more-card-title">Администраторы Telegram бота</div>
+      <div class="more-card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Администраторы Telegram бота</span>
+        <button id="au-add-btn" class="more-btn-sm more-btn-primary press" style="height:32px;padding:0 12px;font-size:12px;display:inline-flex;align-items:center;gap:6px" type="button">
+          ${getIcon('plus')} Добавить пользователя
+        </button>
+      </div>
       <p class="more-item-sub" style="margin:0 0 10px;line-height:1.4">
         Доступ к панели предоставляется через Telegram пароль бота.
       </p>
@@ -1066,17 +1071,75 @@ async function renderSecurity(body) {
   const auListEl = body.querySelector('#au-list');
 
   const renderAuList = (list) => {
-    auListEl.innerHTML = list.length ? list.map(uid => `
-      <div class="more-item-row">
-        <span class="more-item-name">ID: ${escHtml(String(uid))}</span>
-        <button class="more-btn-sm more-btn-danger press au-del" data-uid="${escHtml(String(uid))}" style="display:inline-flex;align-items:center;gap:4px" type="button">
-          ${getIcon('trash')} Отозвать
-        </button>
-      </div>
-    `).join('') : '<div class="more-empty-state" style="padding:10px 0">Нет авторизованных администраторов</div>';
+    auListEl.innerHTML = list.length ? list.map(item => {
+      const uid = item && typeof item === 'object' && 'user_id' in item ? item.user_id : item;
+      const meta = item && typeof item === 'object' && item.data ? item.data : {};
+      const roleStr = meta.role ? ` (${meta.role})` : '';
+      const commentStr = meta.comment ? ` — ${meta.comment}` : '';
+      return `
+        <div class="more-item-row" style="display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <span class="more-item-name">ID: ${escHtml(String(uid))}${escHtml(roleStr)}</span>
+            ${commentStr ? `<div class="more-item-sub">${escHtml(commentStr)}</div>` : ''}
+          </div>
+          <button class="more-btn-sm more-btn-danger press au-del" data-uid="${escHtml(String(uid))}" style="display:inline-flex;align-items:center;gap:4px" type="button">
+            ${getIcon('trash')} Отозвать
+          </button>
+        </div>
+      `;
+    }).join('') : '<div class="more-empty-state" style="padding:10px 0">Нет авторизованных администраторов</div>';
   };
 
   renderAuList(auList);
+
+  body.querySelector('#au-add-btn')?.addEventListener('click', () => {
+    haptic('impact', 'medium');
+    openSheet('Добавить пользователя', `
+      <div style="display:flex;flex-direction:column;gap:12px;padding:16px 0">
+        <p style="font-size:13px;color:var(--muted);margin:0;line-height:1.4">
+          Укажите Telegram ID пользователя для предоставления доступа к панели.
+        </p>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Telegram User ID *</label>
+          <input id="au-inp-uid" type="number" class="more-field" placeholder="Например: 123456789" style="width:100%">
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Роль (необязательно)</label>
+          <input id="au-inp-role" type="text" class="more-field" placeholder="admin" style="width:100%">
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Примечание (необязательно)</label>
+          <input id="au-inp-comment" type="text" class="more-field" placeholder="Менеджер поддержки" style="width:100%">
+        </div>
+        <button class="btn press" id="au-submit-btn" style="margin-top:6px;width:100%;background:var(--primary);color:var(--on-primary);height:44px;font-size:14px;font-weight:600">
+          Добавить пользователя
+        </button>
+      </div>
+    `);
+
+    document.getElementById('au-submit-btn')?.addEventListener('click', async () => {
+      const uidVal = document.getElementById('au-inp-uid')?.value?.trim();
+      const roleVal = document.getElementById('au-inp-role')?.value?.trim() || '';
+      const commentVal = document.getElementById('au-inp-comment')?.value?.trim() || '';
+
+      if (!uidVal || isNaN(Number(uidVal))) {
+        showToast('Введите корректный Telegram ID', 'error');
+        return;
+      }
+
+      const uid = Number(uidVal);
+      try {
+        await api.addAuthorizedUser(uid, roleVal, commentVal);
+        showToast('Пользователь добавлен', 'success');
+        closeSheet();
+        const fresh = await api.getAuthorizedUsers().catch(() => ({ users: [] }));
+        auList = fresh.users || [];
+        renderAuList(auList);
+      } catch (ex) {
+        showToast('Ошибка: ' + (ex.message || ex), 'error');
+      }
+    });
+  });
 
   auListEl.addEventListener('click', async (e) => {
     const btn = e.target.closest('.au-del');
@@ -1089,7 +1152,10 @@ async function renderSecurity(body) {
       async () => {
         try {
           await api.removeAuthorizedUser(uid, true);
-          auList = auList.filter(u => u !== uid);
+          auList = auList.filter(item => {
+            const itemUid = item && typeof item === 'object' && 'user_id' in item ? item.user_id : item;
+            return itemUid !== uid;
+          });
           renderAuList(auList);
           showToast('Доступ отозван', 'success');
         } catch (ex) {

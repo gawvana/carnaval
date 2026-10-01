@@ -402,19 +402,27 @@ def list_plugins() -> list[dict[str, Any]]:
     from carnaval.services.system_mode import is_safe_mode
     safe = is_safe_mode()
     result = []
-    for uuid, pl in cardinal.plugins.items():
-        result.append({
-            "uuid": uuid,
-            "name": pl.name,
-            "version": pl.version,
-            "description": pl.description,
-            "credits": pl.credits,
-            "path": pl.path,
-            "enabled": pl.enabled,
-            "pinned": pl.pinned,
-            "settings_page": pl.settings_page,
-            "bypassed": safe,
-        })
+    plugins_dict = getattr(cardinal, "plugins", {})
+    if isinstance(plugins_dict, dict):
+        for uuid, pl in plugins_dict.items():
+            commands = list(getattr(pl, "commands", {}).keys()) if hasattr(pl, "commands") and isinstance(pl.commands, dict) else []
+            desc = getattr(pl, "description", "")
+            credits_val = getattr(pl, "credits", "")
+            result.append({
+                "uuid": uuid,
+                "name": getattr(pl, "name", uuid),
+                "version": getattr(pl, "version", "1.0.0"),
+                "description": desc,
+                "desc": desc,
+                "credits": credits_val,
+                "author": credits_val,
+                "path": getattr(pl, "path", ""),
+                "enabled": getattr(pl, "enabled", True),
+                "pinned": getattr(pl, "pinned", False),
+                "settings_page": getattr(pl, "settings_page", False),
+                "commands": commands,
+                "bypassed": safe,
+            })
     return result
 
 
@@ -423,14 +431,78 @@ def toggle_plugin(uuid: str) -> tuple[bool, str]:
     cardinal = get_cardinal()
     if uuid not in cardinal.plugins:
         return False, f"Плагин {uuid} не найден"
-    cardinal.toggle_plugin(uuid)
+    if hasattr(cardinal, "toggle_plugin"):
+        cardinal.toggle_plugin(uuid)
+    else:
+        pl = cardinal.plugins[uuid]
+        pl.enabled = not getattr(pl, "enabled", True)
     return True, ""
+
+
+def reload_plugin(uuid: str) -> tuple[bool, str]:
+    """Перезагружает конкретный плагин по UUID."""
+    cardinal = get_cardinal()
+    if uuid not in cardinal.plugins:
+        return False, f"Плагин {uuid} не найден"
+    if hasattr(cardinal, "reload_plugin"):
+        return cardinal.reload_plugin(uuid)
+
+    pl = cardinal.plugins[uuid]
+    path = getattr(pl, "path", None)
+    if not path or not os.path.exists(path):
+        return False, f"Файл плагина не найден: {path}"
+    filename = os.path.basename(path)
+    try:
+        if hasattr(cardinal, "load_plugin"):
+            plugin_module, data = cardinal.load_plugin(filename)
+            pl.name = data.get("NAME", pl.name)
+            pl.version = data.get("VERSION", pl.version)
+            pl.description = data.get("DESCRIPTION", pl.description)
+            pl.credits = data.get("CREDITS", pl.credits)
+            pl.settings_page = data.get("SETTINGS_PAGE", pl.settings_page)
+            pl.delete_handler = data.get("BIND_TO_DELETE", pl.delete_handler)
+            pl.plugin = plugin_module
+            if hasattr(pl, "commands") and isinstance(pl.commands, dict):
+                pl.commands.clear()
+            if hasattr(cardinal, "handler_bind_var_names"):
+                for h_list in cardinal.handler_bind_var_names.values():
+                    h_list[:] = [fn for fn in h_list if getattr(fn, "plugin_uuid", None) != uuid]
+            if hasattr(cardinal, "add_handlers_from_plugin"):
+                cardinal.add_handlers_from_plugin(plugin_module, uuid)
+        return True, ""
+    except Exception as e:
+        return False, f"Ошибка перезагрузки плагина: {e}"
+
+
+def reload_all_plugins() -> tuple[bool, str]:
+    """Перезагружает все плагины в Cardinal."""
+    cardinal = get_cardinal()
+    if hasattr(cardinal, "reload_all_plugins"):
+        return cardinal.reload_all_plugins()
+    if hasattr(cardinal, "reload_plugins"):
+        return cardinal.reload_plugins()
+
+    if not os.path.exists("plugins"):
+        return True, ""
+
+    try:
+        if hasattr(cardinal, "handler_bind_var_names"):
+            for h_list in cardinal.handler_bind_var_names.values():
+                h_list[:] = [fn for fn in h_list if getattr(fn, "plugin_uuid", None) is None]
+        if hasattr(cardinal, "plugins") and isinstance(cardinal.plugins, dict):
+            cardinal.plugins.clear()
+        if hasattr(cardinal, "load_plugins"):
+            cardinal.load_plugins()
+        if hasattr(cardinal, "add_handlers"):
+            cardinal.add_handlers()
+        return True, ""
+    except Exception as e:
+        return False, f"Ошибка перезагрузки всех плагинов: {e}"
 
 
 def upload_plugin(filename: str, content: bytes) -> tuple[bool, str]:
     """
-    Безопасно сохраняет .py файл плагина в plugins/.
-    НЕ исполняет файл — только кладёт на диск.
+    Безопасно сохраняет .py файл плагина в plugins/ и инициализирует в Cardinal.
     """
     if not filename.endswith(".py"):
         return False, "Только .py файлы разрешены"
@@ -450,6 +522,25 @@ def upload_plugin(filename: str, content: bytes) -> tuple[bool, str]:
             f.write(content)
     except Exception as e:
         return False, str(e)
+
+    # Регистрируем плагин в Cardinal если кардинал активен
+    try:
+        cardinal = get_cardinal()
+        if cardinal and hasattr(cardinal, "load_plugin"):
+            plugin_module, data = cardinal.load_plugin(safe_name)
+            uuid = data["UUID"]
+            from cardinal import PluginData
+            plugin_data = PluginData(
+                data["NAME"], data["VERSION"], data["DESCRIPTION"], data["CREDITS"], uuid,
+                dest, plugin_module, data["SETTINGS_PAGE"], data["BIND_TO_DELETE"],
+                True, False
+            )
+            cardinal.plugins[uuid] = plugin_data
+            if hasattr(cardinal, "add_handlers_from_plugin"):
+                cardinal.add_handlers_from_plugin(plugin_module, uuid)
+    except Exception as e:
+        logger.warning(f"Плагин сохранён, но не удалось загрузить в память Cardinal: {e}")
+
     return True, ""
 
 
@@ -459,6 +550,12 @@ def delete_plugin(uuid: str) -> tuple[bool, str]:
     if uuid not in cardinal.plugins:
         return False, f"Плагин {uuid} не найден"
     pl = cardinal.plugins[uuid]
+    delete_handler = getattr(pl, "delete_handler", None)
+    if delete_handler and callable(delete_handler):
+        try:
+            delete_handler(cardinal)
+        except Exception as e:
+            logger.error(f"Plugin delete handler error: {e}")
     path = getattr(pl, "path", None)
     if path and os.path.exists(path):
         try:
@@ -466,6 +563,19 @@ def delete_plugin(uuid: str) -> tuple[bool, str]:
         except Exception as e:
             return False, f"Ошибка удаления файла плагина: {e}"
     del cardinal.plugins[uuid]
+    if hasattr(cardinal, "disabled_plugins") and uuid in cardinal.disabled_plugins:
+        try:
+            cardinal.disabled_plugins.remove(uuid)
+        except Exception:
+            pass
+    if hasattr(cardinal, "pinned_plugins") and uuid in cardinal.pinned_plugins:
+        try:
+            cardinal.pinned_plugins.remove(uuid)
+        except Exception:
+            pass
+    if hasattr(cardinal, "handler_bind_var_names"):
+        for h_list in cardinal.handler_bind_var_names.values():
+            h_list[:] = [fn for fn in h_list if getattr(fn, "plugin_uuid", None) != uuid]
     return True, ""
 
 
@@ -623,25 +733,53 @@ def get_authorized_users() -> list[dict]:
         return [{'user_id': uid, 'data': {}} for uid in auth_users]
 
 
-def add_authorized_user(user_id: int) -> tuple[bool, str]:
+def add_authorized_user(user_id: int, role: Optional[str] = None, comment: Optional[str] = None) -> tuple[bool, str]:
     """Добавляет пользователя в список авторизованных."""
     cardinal = get_cardinal()
-    tg = cardinal.telegram
+    tg = getattr(cardinal, "telegram", None)
     if not tg:
         return False, "Telegram-бот не запущен"
 
     with _AUTH_USERS_LOCK:
-        auth_users = tg.authorized_users
-        if user_id in auth_users or str(user_id) in auth_users:
-            return False, "Пользователь уже авторизован"
-        auth_users[user_id] = {}
-        # Сохраняем в файл через utils
+        auth_users = getattr(tg, "authorized_users", None)
+        if auth_users is None:
+            tg.authorized_users = {}
+            auth_users = tg.authorized_users
+
+        if isinstance(auth_users, dict):
+            if user_id in auth_users or str(user_id) in auth_users:
+                return False, "Пользователь уже авторизован"
+            meta = {}
+            if role:
+                meta["role"] = role
+            if comment:
+                meta["comment"] = comment
+            auth_users[user_id] = meta
+            try:
+                from tg_bot.utils import save_authorized_users
+                save_authorized_users(auth_users)
+            except Exception:
+                pass
+        elif isinstance(auth_users, (list, set)):
+            if user_id in auth_users or str(user_id) in auth_users:
+                return False, "Пользователь уже авторизован"
+            if isinstance(auth_users, list):
+                auth_users.append(user_id)
+            else:
+                auth_users.add(user_id)
+
         try:
-            from tg_bot.utils import save_authorized_users
-            save_authorized_users(auth_users)
-        except Exception as e:
-            del auth_users[user_id]
-            return False, str(e)
+            if hasattr(cardinal, "MAIN_CFG") and "Telegram" in cardinal.MAIN_CFG and "authorizedUsers" in cardinal.MAIN_CFG["Telegram"]:
+                raw = cardinal.MAIN_CFG["Telegram"]["authorizedUsers"]
+                curr = [u.strip() for u in raw.split(",") if u.strip()]
+                if str(user_id) not in curr:
+                    curr.append(str(user_id))
+                    cardinal.MAIN_CFG["Telegram"]["authorizedUsers"] = ",".join(curr)
+                    if hasattr(cardinal, "save_config"):
+                        cardinal.save_config(cardinal.MAIN_CFG, "configs/_main.cfg")
+        except Exception:
+            pass
+
     return True, ""
 
 
@@ -1046,16 +1184,26 @@ def get_authorized_user_detail(target_user_id: int) -> Optional[dict[str, Any]]:
     return None
 
 
-def pin_plugin(uuid: str) -> tuple[bool, str]:
+def pin_plugin(uuid: str, pinned: Optional[bool] = None) -> tuple[bool, str]:
     """Закрепляет или открепляет плагин."""
     cardinal = get_cardinal()
     if uuid not in cardinal.plugins:
         return False, f"Плагин {uuid} не найден"
+    pl = cardinal.plugins[uuid]
+    target_pinned = bool(pinned) if pinned is not None else not getattr(pl, "pinned", False)
+
     if hasattr(cardinal, "pin_plugin"):
-        cardinal.pin_plugin(uuid)
+        if getattr(pl, "pinned", False) != target_pinned:
+            cardinal.pin_plugin(uuid)
+        else:
+            pl.pinned = target_pinned
     else:
-        pl = cardinal.plugins[uuid]
-        pl.pinned = not getattr(pl, "pinned", False)
+        pl.pinned = target_pinned
+        if hasattr(cardinal, "pinned_plugins"):
+            if target_pinned and uuid not in cardinal.pinned_plugins:
+                cardinal.pinned_plugins.append(uuid)
+            elif not target_pinned and uuid in cardinal.pinned_plugins:
+                cardinal.pinned_plugins.remove(uuid)
     return True, ""
 
 

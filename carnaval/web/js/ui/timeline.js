@@ -22,12 +22,31 @@ export async function renderTimeline(containerEl) {
     const events = res?.events || [];
     renderTimelineList(containerEl, events);
   } catch (e) {
-    const fallbackEvents = [
-      { id: '1', timestamp: 'Только что', category: 'system', title: 'Система запущена', desc: 'Cardinal и Carnaval успешно инициализированы', replay: false },
-      { id: '2', timestamp: '1 мин назад', category: 'funpay', title: 'FunPay подключен', desc: 'Авторизация по Golden Key подтверждена', replay: false },
-    ];
-    renderTimelineList(containerEl, fallbackEvents);
+    renderTimelineError(containerEl, e?.message || 'Не удалось загрузить ленту активности');
   }
+}
+
+function renderTimelineError(containerEl, errorMessage) {
+  containerEl.innerHTML = `
+    <div class="timeline-container" style="padding: 10px 0;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding: 0 4px;">
+        <span style="font-size: 13px; font-weight: 600; color: var(--on); display: flex; align-items: center; gap: 6px;">
+          ${getIcon('timeline', 'icon-sm')} Журнал активности
+        </span>
+      </div>
+      <div class="liquid-glass" style="padding: 20px 14px; border-radius: var(--r2); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; border-left: 3px solid var(--err);">
+        <div style="color: var(--err);">${getIcon('alert', 'icon-md')}</div>
+        <div style="font-size: 13px; font-weight: 600; color: var(--on);">События временно недоступны</div>
+        <div style="font-size: 11px; color: var(--muted); max-width: 280px; line-height: 1.4;">${escapeHtml(errorMessage || 'Не удалось получить журнал событий. Проверьте соединение с сервером.')}</div>
+        <button id="retry-timeline-btn" class="btn btn-sm btn-primary spring-tap" style="margin-top: 4px; padding: 5px 14px; font-size: 11px; border-radius: var(--r1); display: inline-flex; align-items: center; gap: 4px; cursor: pointer;">
+          ${getIcon('refresh', 'icon-xs')} Повторить попытку
+        </button>
+      </div>
+    </div>
+  `;
+  containerEl.querySelector('#retry-timeline-btn')?.addEventListener('click', () => {
+    renderTimeline(containerEl);
+  });
 }
 
 function renderTimelineList(containerEl, events) {

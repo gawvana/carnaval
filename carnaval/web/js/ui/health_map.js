@@ -21,16 +21,32 @@ export async function renderHealthMap(containerEl) {
     const topology = await api.request('GET', '/api/live/topology', { allowRelogin: false });
     renderTopologyGraph(containerEl, topology?.nodes || []);
   } catch (e) {
-    // Fallback default nodes if API is loading
-    const defaultNodes = [
-      { id: 'telegram', label: 'Telegram Bot', status: 'healthy', icon: 'telegram', details: 'Бот активен' },
-      { id: 'backend', label: 'FastAPI Backend', status: 'healthy', icon: 'system', details: 'Порт 5000' },
-      { id: 'cardinal', label: 'Cardinal Core', status: 'healthy', icon: 'cpu', details: 'Ядро работает' },
-      { id: 'runner', label: 'FunPay Runner', status: 'healthy', icon: 'activity', details: 'Цикл активен' },
-      { id: 'funpay', label: 'FunPay API', status: 'healthy', icon: 'funpay', details: 'Соединение установлено' },
-    ];
-    renderTopologyGraph(containerEl, defaultNodes);
+    renderTopologyError(containerEl, e?.message || 'Не удалось связаться с сервером');
   }
+}
+
+function renderTopologyError(containerEl, errorMessage) {
+  containerEl.innerHTML = `
+    <div class="topology-container" style="padding: 14px 10px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <span style="font-size: 13px; font-weight: 600; color: var(--on); display: flex; align-items: center; gap: 6px;">
+          ${getIcon('activity', 'icon-sm')} Карта сервисов
+        </span>
+        <span style="font-size: 11px; color: var(--err);">Сбой сети</span>
+      </div>
+      <div class="liquid-glass" style="padding: 24px 16px; border-radius: var(--r2); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; border-left: 3px solid var(--err);">
+        <div style="color: var(--err);">${getIcon('alert', 'icon-md')}</div>
+        <div style="font-size: 14px; font-weight: 600; color: var(--on);">Топология недоступна</div>
+        <div style="font-size: 12px; color: var(--muted); max-width: 320px; line-height: 1.4;">${escapeHtml(errorMessage || 'Не удалось получить актуальный статус сервисов. Проверьте соединение с сервером.')}</div>
+        <button id="retry-health-map-btn" class="btn btn-sm btn-primary spring-tap" style="margin-top: 4px; padding: 6px 16px; font-size: 12px; border-radius: var(--r1); display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+          ${getIcon('refresh', 'icon-xs')} Повторить попытку
+        </button>
+      </div>
+    </div>
+  `;
+  containerEl.querySelector('#retry-health-map-btn')?.addEventListener('click', () => {
+    renderHealthMap(containerEl);
+  });
 }
 
 function renderTopologyGraph(containerEl, nodes) {
@@ -60,14 +76,18 @@ function renderTopologyGraph(containerEl, nodes) {
       healthy: 'var(--ok, #1B6E4A)',
       warning: 'var(--warn, #D97706)',
       error: 'var(--err, #BA1B3D)',
-      inactive: 'var(--muted, #71717A)'
+      inactive: 'var(--muted, #71717A)',
+      unknown: 'var(--muted, #71717A)',
+      unavailable: 'var(--err, #BA1B3D)',
+      degraded: 'var(--warn, #D97706)',
     };
     const color = statusColorMap[node.status] || 'var(--muted)';
+    const nodeLabel = node.label || node.name || node.id || 'Узел';
 
     card.innerHTML = `
       <div style="color: ${color};">${getIcon(node.icon || 'system', 'icon-md')}</div>
       <div style="font-size: 12px; font-weight: 600; color: var(--on); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">
-        ${escapeHtml(node.label)}
+        ${escapeHtml(nodeLabel)}
       </div>
       <div style="font-size: 10px; color: var(--muted); text-transform: uppercase;">
         ${escapeHtml(node.status || 'unknown')}
@@ -87,15 +107,20 @@ function renderNodeDetails(sheetEl, node) {
   sheetEl.className = 'liquid-glass';
   sheetEl.style.cssText = 'padding: 14px; border-radius: var(--r2); margin-top: 12px; border-left: 3px solid var(--primary);';
 
+  const nodeLabel = node.label || node.name || node.id || 'Узел';
+  const nodeDetails = node.exact_reason || node.details || 'Сервис функционирует в штатном режиме.';
+  const recAction = node.recovery_action;
+  const recLabel = recAction?.label || node.recovery_action_label || 'Восстановить';
+
   sheetEl.innerHTML = `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-      <strong style="font-size: 13px; color: var(--on);">${escapeHtml(node.label)}</strong>
+      <strong style="font-size: 13px; color: var(--on);">${escapeHtml(nodeLabel)}</strong>
       <button id="close-node-sheet" style="background: none; border: none; color: var(--muted); cursor: pointer;">${getIcon('close', 'icon-sm')}</button>
     </div>
-    <div style="font-size: 12px; color: var(--muted); line-height: 1.4;">${escapeHtml(node.details || 'Сервис функционирует в нормальном режиме.')}</div>
-    ${node.recovery_action ? `
-      <button class="btn btn-sm btn-primary spring-tap" style="margin-top: 10px; font-size: 12px; padding: 6px 12px; border-radius: var(--r1);">
-        ${escapeHtml(node.recovery_action_label || 'Восстановить')}
+    <div style="font-size: 12px; color: var(--muted); line-height: 1.4;">${escapeHtml(nodeDetails)}</div>
+    ${recAction ? `
+      <button id="node-recovery-btn" class="btn btn-sm btn-primary spring-tap" style="margin-top: 10px; font-size: 12px; padding: 6px 12px; border-radius: var(--r1); cursor: pointer;">
+        ${escapeHtml(recLabel)}
       </button>
     ` : ''}
   `;
@@ -103,6 +128,22 @@ function renderNodeDetails(sheetEl, node) {
   sheetEl.querySelector('#close-node-sheet').addEventListener('click', () => {
     sheetEl.style.display = 'none';
   });
+
+  const recBtn = sheetEl.querySelector('#node-recovery-btn');
+  if (recBtn && recAction) {
+    recBtn.addEventListener('click', async () => {
+      if (recAction.endpoint) {
+        try {
+          await api.request('POST', recAction.endpoint, {}, { allowRelogin: false });
+          recBtn.disabled = true;
+          recBtn.textContent = 'Запрос отправлен';
+        } catch (err) {
+          recBtn.textContent = 'Ошибка: ' + (err.message || err);
+        }
+      }
+    });
+  }
+
 }
 
 function escapeHtml(str) {

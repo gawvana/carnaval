@@ -341,7 +341,42 @@ def get_live_telemetry() -> Dict[str, Any]:
         or (cardinal and getattr(cardinal, "MAIN_CFG", None) and cardinal.MAIN_CFG.get("FunPay", "golden_key", fallback="").strip())
     )
 
-    if acc and (getattr(acc, "is_initiated", False) or getattr(acc, "id", None)):
+    from carnaval.services.account_lifecycle import lifecycle_manager, AccountState
+    lc_status = lifecycle_manager.get_status()
+    lc_state = lc_status.get("state")
+
+    valid_acc_id = False
+    raw_acc_id = getattr(acc, "id", None) if acc is not None else None
+    if raw_acc_id is not None:
+        try:
+            valid_acc_id = int(raw_acc_id) > 0
+        except (ValueError, TypeError):
+            valid_acc_id = False
+
+    is_runtime_authenticated = (
+        lc_state in (AccountState.READY.value, AccountState.CONNECTED.value, AccountState.RUNNER_STARTING.value)
+        or (
+            cardinal is not None
+            and getattr(cardinal, "running", False) is True
+            and lc_state not in (
+                AccountState.FAILED.value,
+                AccountState.DISCONNECTING.value,
+                AccountState.DISCONNECTED.value,
+                AccountState.AUTHENTICATING.value,
+                AccountState.CONNECTING.value,
+                AccountState.RECONNECTING.value,
+            )
+        )
+    )
+
+    is_account_ready = bool(
+        acc is not None
+        and getattr(acc, "is_initiated", False) is True
+        and valid_acc_id
+        and is_runtime_authenticated
+    )
+
+    if is_account_ready:
         fp_connection_state = "ready"
         fp_user = {
             "id": getattr(acc, "id", None),
@@ -369,11 +404,9 @@ def get_live_telemetry() -> Dict[str, Any]:
         elif last_ping == 0.0:
             last_ping = time.time()
     elif has_key:
-        from carnaval.services.account_lifecycle import lifecycle_manager, AccountState
-        st = lifecycle_manager.get_status()
-        if st.get("state") == AccountState.FAILED.value:
+        if lc_state == AccountState.FAILED.value:
             fp_connection_state = "failed"
-        elif st.get("state") in (AccountState.AUTHENTICATING.value, AccountState.CONNECTING.value):
+        elif lc_state in (AccountState.AUTHENTICATING.value, AccountState.CONNECTING.value, AccountState.RECONNECTING.value):
             fp_connection_state = "connecting"
         else:
             fp_connection_state = "disconnected"

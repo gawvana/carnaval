@@ -1,6 +1,6 @@
 /*
   components.css — компоненты дизайн-системы Mattering v2.
-  Стекло, навигация, док, линза, FAB, шторки, переключатели, карточки, тосты.
+  Стекло, навигация, док, линза, шторки, переключатели, карточки, тосты.
 */
 
 /* ── Слой стекла (Liquid Glass) ── */
@@ -212,6 +212,13 @@ html.refract .glass {
   visibility: hidden !important;
   opacity: 0 !important;
 }
+
+/* ── Вспомогательные классы размеров SVG-иконок ── */
+.icon-xs { width: 14px !important; height: 14px !important; }
+.icon-sm { width: 18px !important; height: 18px !important; }
+.icon-md { width: 22px !important; height: 22px !important; }
+.icon-lg { width: 28px !important; height: 28px !important; }
+.icon-xl { width: 36px !important; height: 36px !important; }
 
 /* ── Нижняя шторка (Bottom Sheet) ── */
 .scrim {

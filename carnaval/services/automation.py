@@ -18,6 +18,8 @@ import uuid
 from collections import deque
 import asyncio
 import threading
+import json
+import hashlib
 from typing import Any, Optional
 
 from carnaval.deps import get_cardinal
@@ -971,16 +973,16 @@ def simulate_automation(event_type: str, test_payload: Optional[dict[str, Any]] 
     payload = test_payload or {}
     ev_type = (event_type or "").strip().lower()
 
-    if ev_type in ("auto_delivery", "delivery", "order", "new_order"):
+    if ev_type in ("auto_delivery", "delivery", "order", "new_order", "order_created"):
         matched_rule, conditions, action_preview, success = _simulate_delivery(cardinal, payload)
         category = "auto_delivery"
-    elif ev_type in ("auto_response", "response", "command"):
+    elif ev_type in ("auto_response", "response", "command", "command_received"):
         matched_rule, conditions, action_preview, success = _simulate_response(cardinal, payload)
         category = "auto_response"
     elif ev_type in ("greetings", "greeting"):
         matched_rule, conditions, action_preview, success = _simulate_greetings(cardinal, payload)
         category = "greetings"
-    elif ev_type in ("message", "new_message"):
+    elif ev_type in ("message", "new_message", "message_received"):
         msg = payload.get("message") or payload.get("text") or payload.get("command") or ""
         cmd_clean = str(msg).strip().lower()
         has_ar = False
@@ -1035,4 +1037,404 @@ def simulate_automation(event_type: str, test_payload: Optional[dict[str, Any]] 
     record_execution_trace(trace_record)
 
     return result
+
+
+# ─────────────────────────────────────────────────────────────
+# 7. Интерактивные воркфлоу автоматизации (Automation Builder)
+# ─────────────────────────────────────────────────────────────
+
+_WORKFLOWS_LOCK = threading.Lock()
+_WORKFLOWS_FILE = os.path.join("storage", "cache", "automation_workflows.json")
+
+
+def _load_workflows_raw() -> list[dict[str, Any]]:
+    if not os.path.exists(_WORKFLOWS_FILE):
+        return []
+    try:
+        with open(_WORKFLOWS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                return data
+            elif isinstance(data, dict) and "rules" in data:
+                return data["rules"]
+            elif isinstance(data, dict) and "workflows" in data:
+                return data["workflows"]
+    except Exception:
+        return []
+    return []
+
+
+def _save_workflows_raw(workflows: list[dict[str, Any]]) -> None:
+    os.makedirs(os.path.dirname(_WORKFLOWS_FILE), exist_ok=True)
+    with open(_WORKFLOWS_FILE, "w", encoding="utf-8") as f:
+        json.dump(workflows, f, ensure_ascii=False, indent=2)
+
+
+def _synthesize_default_workflows() -> list[dict[str, Any]]:
+    workflows = []
+    cardinal = None
+    try:
+        cardinal = get_cardinal()
+    except Exception:
+        pass
+
+    if cardinal:
+        # Из AD_CFG
+        ad_cfg = getattr(cardinal, "AD_CFG", None)
+        if ad_cfg and hasattr(ad_cfg, "sections"):
+            for sec_name in ad_cfg.sections():
+                sec = ad_cfg[sec_name]
+                p_file = sec.get("productsFileName", "")
+                resp = sec.get("response", "")
+                dis = sec.getboolean("disable", fallback=False)
+                wf_id = "wf_ad_" + hashlib.md5(sec_name.encode("utf-8")).hexdigest()[:8]
+                workflows.append({
+                    "id": wf_id,
+                    "name": f"Автовыдача: {sec_name}",
+                    "enabled": not dis,
+                    "category": "auto_delivery",
+                    "nodes": [
+                        {
+                            "id": f"{wf_id}_1",
+                            "type": "trigger",
+                            "event_type": "order_created",
+                            "label": f"Заказ на '{sec_name}'",
+                            "params": {"lot_name": sec_name},
+                        },
+                        {
+                            "id": f"{wf_id}_2",
+                            "type": "condition",
+                            "condition": "blacklist_check",
+                            "label": "Покупатель не в ЧС",
+                            "params": {},
+                        },
+                        {
+                            "id": f"{wf_id}_3",
+                            "type": "condition",
+                            "condition": "lot_active",
+                            "label": "Лот активен",
+                            "params": {},
+                        },
+                        {
+                            "id": f"{wf_id}_4",
+                            "type": "action",
+                            "action": "deliver_product",
+                            "label": "Выдать товар",
+                            "params": {
+                                "lot_name": sec_name,
+                                "response": resp,
+                                "productsFileName": p_file,
+                            },
+                        },
+                        {
+                            "id": f"{wf_id}_5",
+                            "type": "notification",
+                            "action": "send_notification",
+                            "label": "Уведомление в Telegram",
+                            "params": {"text": f"Выдан заказ по лоту {sec_name}"},
+                        },
+                    ],
+                })
+
+        # Из RAW_AR_CFG
+        raw_ar = getattr(cardinal, "RAW_AR_CFG", None)
+        if raw_ar and hasattr(raw_ar, "sections"):
+            for cmd_name in raw_ar.sections():
+                sec = raw_ar[cmd_name]
+                resp = sec.get("response", "")
+                en = sec.getboolean("enabled", fallback=True)
+                tg_notif = sec.getboolean("telegramNotification", fallback=False)
+                ntfc_text = sec.get("notificationText", "")
+                wf_id = "wf_ar_" + hashlib.md5(cmd_name.encode("utf-8")).hexdigest()[:8]
+                nodes = [
+                    {
+                        "id": f"{wf_id}_1",
+                        "type": "trigger",
+                        "event_type": "command_received",
+                        "label": f"Команда: {cmd_name}",
+                        "params": {"command": cmd_name},
+                    },
+                    {
+                        "id": f"{wf_id}_2",
+                        "type": "condition",
+                        "condition": "blacklist_check",
+                        "label": "Пользователь не в ЧС",
+                        "params": {},
+                    },
+                    {
+                        "id": f"{wf_id}_3",
+                        "type": "condition",
+                        "condition": "text_contains",
+                        "label": f"Текст содержит '{cmd_name}'",
+                        "params": {"text": cmd_name},
+                    },
+                    {
+                        "id": f"{wf_id}_4",
+                        "type": "action",
+                        "action": "send_response",
+                        "label": "Отправка автоответа",
+                        "params": {"response": resp},
+                    },
+                ]
+                if tg_notif:
+                    nodes.append({
+                        "id": f"{wf_id}_5",
+                        "type": "notification",
+                        "action": "send_notification",
+                        "label": "Уведомление в Telegram",
+                        "params": {"text": ntfc_text or f"Вызвана команда {cmd_name}"},
+                    })
+                workflows.append({
+                    "id": wf_id,
+                    "name": f"Автоответ: {cmd_name}",
+                    "enabled": en,
+                    "category": "auto_response",
+                    "nodes": nodes,
+                })
+
+    if not workflows:
+        wf_id = "wf_default_order"
+        workflows.append({
+            "id": wf_id,
+            "name": "Основная автовыдача",
+            "enabled": True,
+            "category": "auto_delivery",
+            "nodes": [
+                {
+                    "id": f"{wf_id}_1",
+                    "type": "trigger",
+                    "event_type": "order_created",
+                    "label": "Новый оплаченный заказ",
+                    "params": {"lot_name": "Тестовый лот"},
+                },
+                {
+                    "id": f"{wf_id}_2",
+                    "type": "condition",
+                    "condition": "blacklist_check",
+                    "label": "Покупатель не в ЧС",
+                    "params": {},
+                },
+                {
+                    "id": f"{wf_id}_3",
+                    "type": "condition",
+                    "condition": "lot_active",
+                    "label": "Лот активен",
+                    "params": {},
+                },
+                {
+                    "id": f"{wf_id}_4",
+                    "type": "action",
+                    "action": "deliver_product",
+                    "label": "Выдать товар из хранилища",
+                    "params": {
+                        "lot_name": "Тестовый лот",
+                        "response": "Спасибо за покупку! Ваш ключ: $product",
+                    },
+                },
+                {
+                    "id": f"{wf_id}_5",
+                    "type": "notification",
+                    "action": "send_notification",
+                    "label": "Уведомление в Telegram",
+                    "params": {"text": "Заказ $order_id успешно выполнен"},
+                },
+            ],
+        })
+
+    return workflows
+
+
+def list_workflows() -> list[dict[str, Any]]:
+    """Возвращает список сохраненных воркфлоу автоматизаций."""
+    with _WORKFLOWS_LOCK:
+        stored = _load_workflows_raw()
+        if not stored:
+            stored = _synthesize_default_workflows()
+            _save_workflows_raw(stored)
+        return stored
+
+
+def get_workflow(workflow_id: str) -> Optional[dict[str, Any]]:
+    workflows = list_workflows()
+    for wf in workflows:
+        if str(wf.get("id")) == str(workflow_id):
+            return wf
+    return None
+
+
+def _sync_workflow_to_cardinal(workflow: dict[str, Any]) -> None:
+    """Синхронизирует воркфлоу с конфигурацией Cardinal (AD_CFG, RAW_AR_CFG, MAIN_CFG)."""
+    cardinal = None
+    try:
+        cardinal = get_cardinal()
+    except Exception:
+        return
+
+    if not cardinal:
+        return
+
+    nodes = workflow.get("nodes", [])
+    is_enabled = workflow.get("enabled", True)
+
+    # Ищем триггер, экшены и уведомления
+    trigger_node = next((n for n in nodes if n.get("type") == "trigger"), None)
+    action_nodes = [n for n in nodes if n.get("type") == "action"]
+    notif_nodes = [n for n in nodes if n.get("type") == "notification"]
+
+    ev_type = trigger_node.get("event_type") if trigger_node else None
+
+    # 1. Автовыдача (order_created -> deliver_product)
+    delivery_action = next((a for a in action_nodes if a.get("action") == "deliver_product"), None)
+    if delivery_action or ev_type == "order_created":
+        params = (delivery_action.get("params") if delivery_action else None) or {}
+        lot_name = params.get("lot_name") or (trigger_node.get("params", {}).get("lot_name") if trigger_node else None) or workflow.get("name", "New Lot")
+        response_text = params.get("response", "Спасибо за покупку!")
+        p_file = params.get("productsFileName") or ""
+
+        ad_cfg = getattr(cardinal, "AD_CFG", None)
+        if ad_cfg and hasattr(ad_cfg, "sections"):
+            with _AD_LOCK:
+                if lot_name not in ad_cfg.sections():
+                    ad_cfg.add_section(lot_name)
+                ad_cfg.set(lot_name, "response", response_text)
+                if p_file:
+                    ad_cfg.set(lot_name, "productsFileName", _sanitize_filename(p_file))
+                elif ad_cfg.has_option(lot_name, "productsFileName"):
+                    ad_cfg.remove_option(lot_name, "productsFileName")
+                ad_cfg.set(lot_name, "disable", "0" if is_enabled else "1")
+
+                os.makedirs("configs", exist_ok=True)
+                if hasattr(cardinal, "save_config"):
+                    cardinal.save_config(ad_cfg, "configs/auto_delivery.cfg")
+
+    # 2. Автоответчик (command_received / message_received -> send_response)
+    response_action = next((a for a in action_nodes if a.get("action") == "send_response"), None)
+    if response_action or ev_type in ("command_received", "message_received"):
+        params = (response_action.get("params") if response_action else None) or {}
+        cmd_name = (
+            (trigger_node.get("params", {}).get("command") if trigger_node else None)
+            or params.get("command")
+            or workflow.get("name", "!cmd")
+        )
+        resp_text = params.get("response", "Команда принята")
+
+        has_tg_notif = bool(notif_nodes or any(a.get("action") == "send_notification" for a in action_nodes))
+        notif_text = ""
+        if notif_nodes:
+            notif_text = notif_nodes[0].get("params", {}).get("text", "")
+
+        raw_ar = getattr(cardinal, "RAW_AR_CFG", None)
+        if raw_ar and hasattr(raw_ar, "sections"):
+            with _AR_LOCK:
+                if cmd_name not in raw_ar.sections():
+                    raw_ar.add_section(cmd_name)
+                raw_ar.set(cmd_name, "response", resp_text)
+                raw_ar.set(cmd_name, "telegramNotification", "1" if has_tg_notif else "0")
+                raw_ar.set(cmd_name, "enabled", "1" if is_enabled else "0")
+                if notif_text:
+                    raw_ar.set(cmd_name, "notificationText", notif_text)
+                elif raw_ar.has_option(cmd_name, "notificationText"):
+                    raw_ar.remove_option(cmd_name, "notificationText")
+
+                os.makedirs("configs", exist_ok=True)
+                if hasattr(cardinal, "save_config"):
+                    cardinal.save_config(raw_ar, "configs/auto_response.cfg")
+                if os.path.exists("configs/auto_response.cfg"):
+                    try:
+                        cardinal.AR_CFG = cfg_loader.load_auto_response_config("configs/auto_response.cfg")
+                        cardinal.RAW_AR_CFG = cfg_loader.load_raw_auto_response_config("configs/auto_response.cfg")
+                    except Exception:
+                        pass
+
+    # 3. Поднятие лотов (raise_lots)
+    if any(a.get("action") == "raise_lots" for a in action_nodes):
+        main_cfg = getattr(cardinal, "MAIN_CFG", None)
+        if main_cfg and hasattr(main_cfg, "sections"):
+            if not main_cfg.has_section("FunPay"):
+                main_cfg.add_section("FunPay")
+            main_cfg.set("FunPay", "autoRaise", "1" if is_enabled else "0")
+            if hasattr(cardinal, "save_config"):
+                cardinal.save_config(main_cfg, "configs/_main.cfg")
+
+
+def save_workflow(workflow_data: dict[str, Any]) -> dict[str, Any]:
+    """Сохраняет или обновляет воркфлоу и синхронизирует его с Cardinal."""
+    wf_name = (workflow_data.get("name") or "New Workflow").strip()
+    nodes = workflow_data.get("nodes", [])
+
+    if not nodes:
+        raise ValueError("Воркфлоу должен содержать хотя бы один узел")
+
+    # Валидация структуры
+    has_trigger = any(n.get("type") == "trigger" for n in nodes)
+    has_action = any(n.get("type") in ("action", "notification") for n in nodes)
+    if not has_trigger:
+        raise ValueError("Воркфлоу должен содержать начальный триггер (Trigger)")
+    if not has_action:
+        raise ValueError("Воркфлоу должен содержать хотя бы одно действие (Action)")
+
+    wf_id = workflow_data.get("id") or ("wf_" + str(uuid.uuid4())[:8])
+    workflow = {
+        "id": wf_id,
+        "name": wf_name,
+        "enabled": workflow_data.get("enabled", True),
+        "category": workflow_data.get("category") or "custom",
+        "nodes": nodes,
+        "updated_at": time.time(),
+    }
+
+    with _WORKFLOWS_LOCK:
+        workflows = _load_workflows_raw()
+        if not workflows:
+            workflows = _synthesize_default_workflows()
+
+        idx = next((i for i, w in enumerate(workflows) if str(w.get("id")) == str(wf_id)), -1)
+        if idx >= 0:
+            workflows[idx] = workflow
+        else:
+            workflows.append(workflow)
+
+        _save_workflows_raw(workflows)
+
+    # Синхронизация с конфигами Cardinal
+    _sync_workflow_to_cardinal(workflow)
+    return workflow
+
+
+def update_workflow(workflow_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+    """Обновляет статус активности, имя или узлы существующего воркфлоу."""
+    with _WORKFLOWS_LOCK:
+        workflows = _load_workflows_raw()
+        if not workflows:
+            workflows = _synthesize_default_workflows()
+
+        idx = next((i for i, w in enumerate(workflows) if str(w.get("id")) == str(workflow_id)), -1)
+        if idx < 0:
+            raise IndexError(f"Workflow {workflow_id} not found")
+
+        wf = workflows[idx]
+        for k, v in updates.items():
+            if v is not None:
+                wf[k] = v
+        wf["updated_at"] = time.time()
+        workflows[idx] = wf
+        _save_workflows_raw(workflows)
+
+    _sync_workflow_to_cardinal(wf)
+    return wf
+
+
+def delete_workflow(workflow_id: str) -> bool:
+    """Удаляет воркфлоу."""
+    with _WORKFLOWS_LOCK:
+        workflows = _load_workflows_raw()
+        if not workflows:
+            workflows = _synthesize_default_workflows()
+
+        new_list = [w for w in workflows if str(w.get("id")) != str(workflow_id)]
+        if len(new_list) == len(workflows):
+            return False
+
+        _save_workflows_raw(new_list)
+        return True
 

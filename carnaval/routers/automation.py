@@ -430,3 +430,140 @@ async def get_debug_traces_route(
     traces = auto_svc.get_execution_traces(limit=limit)
     return JSONResponse({"traces": traces})
 
+
+# ─────────────────────────────────────────────────────────────
+# 7. Воркфлоу автоматизации (Automation Builder)
+# ─────────────────────────────────────────────────────────────
+
+class WorkflowNodeModel(BaseModel):
+    id: Optional[str] = None
+    type: str  # trigger, condition, action, notification
+    label: Optional[str] = None
+    event_type: Optional[str] = None
+    condition: Optional[str] = None
+    action: Optional[str] = None
+    params: Optional[dict[str, Any]] = None
+
+
+class WorkflowModel(BaseModel):
+    id: Optional[str] = None
+    name: str
+    enabled: bool = True
+    category: Optional[str] = None
+    nodes: list[WorkflowNodeModel]
+
+
+class WorkflowUpdateModel(BaseModel):
+    name: Optional[str] = None
+    enabled: Optional[bool] = None
+    category: Optional[str] = None
+    nodes: Optional[list[WorkflowNodeModel]] = None
+
+
+@router.get("/automation/rules")
+async def get_automation_rules_route(
+    request: Request,
+    user_id: int = Depends(require_user),
+) -> JSONResponse:
+    """
+    Возвращает список сконфигурированных воркфлоу автоматизации.
+    """
+    rules = auto_svc.list_workflows()
+    return JSONResponse({"rules": rules, "workflows": rules, "success": True})
+
+
+@router.post("/automation/rules")
+async def save_automation_rule_route(
+    req: WorkflowModel,
+    request: Request,
+    user_id: int = Depends(require_user),
+) -> JSONResponse:
+    """
+    Сохраняет или создает воркфлоу, синхронизируя его с Cardinal config.
+    """
+    try:
+        saved = auto_svc.save_workflow(req.model_dump() if hasattr(req, "model_dump") else req.dict())
+        logger.info(f"AUDIT: user_id={user_id} сохранил воркфлоу '{saved.get('name')}'")
+        return JSONResponse(saved)
+    except Exception as e:
+        logger.exception("Save workflow failed")
+        return JSONResponse({"error": "bad_request", "message": str(e)}, status_code=400)
+
+
+@router.get("/automation/rules/{rule_id}")
+async def get_automation_rule_item_route(
+    rule_id: str,
+    request: Request,
+    user_id: int = Depends(require_user),
+) -> JSONResponse:
+    """
+    Получение конкретного воркфлоу по ID.
+    """
+    wf = auto_svc.get_workflow(rule_id)
+    if not wf:
+        return JSONResponse({"error": "not_found", "message": f"Workflow {rule_id} not found"}, status_code=404)
+    return JSONResponse(wf)
+
+
+@router.patch("/automation/rules/{rule_id}")
+async def patch_automation_rule_route(
+    rule_id: str,
+    req: WorkflowUpdateModel,
+    request: Request,
+    user_id: int = Depends(require_user),
+) -> JSONResponse:
+    """
+    Обновление параметров воркфлоу (включение/отключение, переименование, изменение узлов).
+    """
+    try:
+        raw_data = req.model_dump(exclude_unset=True) if hasattr(req, "model_dump") else {k: v for k, v in req.dict().items() if v is not None}
+        updated = auto_svc.update_workflow(rule_id, raw_data)
+        logger.info(f"AUDIT: user_id={user_id} обновил воркфлоу {rule_id}")
+        return JSONResponse(updated)
+    except IndexError:
+        return JSONResponse({"error": "not_found", "message": f"Workflow {rule_id} not found"}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"error": "bad_request", "message": str(e)}, status_code=400)
+
+
+@router.put("/automation/rules/{rule_id}")
+async def put_automation_rule_route(
+    rule_id: str,
+    req: WorkflowModel,
+    request: Request,
+    user_id: int = Depends(require_user),
+) -> JSONResponse:
+    """
+    Полное сохранение воркфлоу с указанным ID.
+    """
+    try:
+        data = req.model_dump() if hasattr(req, "model_dump") else req.dict()
+        data["id"] = rule_id
+        saved = auto_svc.save_workflow(data)
+        return JSONResponse(saved)
+    except Exception as e:
+        return JSONResponse({"error": "bad_request", "message": str(e)}, status_code=400)
+
+
+@router.delete("/automation/rules/{rule_id}")
+async def delete_automation_rule_route(
+    rule_id: str,
+    request: Request,
+    user_id: int = Depends(require_user),
+    confirm: bool = Query(False),
+) -> JSONResponse:
+    """
+    Удаление воркфлоу автоматизации.
+    """
+    if not await _check_confirmation(request, confirm):
+        return JSONResponse({"error": "confirm_required", "message": "Удаление воркфлоу требует confirm=true"}, status_code=400)
+    try:
+        ok = auto_svc.delete_workflow(rule_id)
+        if not ok:
+            return JSONResponse({"error": "not_found", "message": f"Workflow {rule_id} not found"}, status_code=404)
+        logger.warning(f"AUDIT: user_id={user_id} удалил воркфлоу {rule_id}")
+        return JSONResponse({"success": True})
+    except Exception as e:
+        return JSONResponse({"error": "bad_request", "message": str(e)}, status_code=400)
+
+

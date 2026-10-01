@@ -84,6 +84,8 @@ const ICONS = {
   performance: `<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>`,
   'safe-mode': `<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>`,
   maintenance: `<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>`,
+  system: `<rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><line x1="6" y1="7" x2="6.01" y2="7"/><line x1="6" y1="17" x2="6.01" y2="17"/>`,
+  reconnect: `<path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 17.65-5.65L21.5 8M22 12.5a10 10 0 0 1-17.65 5.65L2.5 16"/>`,
 };
 
 /**
@@ -98,4 +100,5 @@ export function getIcon(name, className = '') {
   return `<svg${cls} viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>`;
 }
 
+export { ICONS };
 export default getIcon;

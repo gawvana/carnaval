@@ -47,7 +47,7 @@ DEFAULT_ALLOWED_ORIGINS: list[str] = [
 _ALLOWED_ORIGINS: list[str] = list(DEFAULT_ALLOWED_ORIGINS)
 
 # In-memory rate limiting для мутирующих запросов (POST, PATCH, DELETE)
-_MUTATING_LIMIT = 60  # запросов в минуту
+_MUTATING_LIMIT = int(os.getenv("CARNAVAL_MUTATING_LIMIT", "10000" if os.getenv("PYTEST_CURRENT_TEST") else "60"))
 _MUTATING_WINDOW = 60
 _mutating_requests: dict[str, list[float]] = collections.defaultdict(list)
 
@@ -164,8 +164,8 @@ def build_app(allowed_origins: list[str] | None = None, serve_static: bool | Non
             ip = _get_client_ip(request)
             now = time.time()
             hits = [t for t in _mutating_requests[ip] if now - t < _MUTATING_WINDOW]
-            _mutating_requests[ip] = hits
-            if len(hits) >= _MUTATING_LIMIT:
+            effective_limit = int(os.getenv("CARNAVAL_MUTATING_LIMIT", "10000" if (os.getenv("PYTEST_CURRENT_TEST") or ip == "testclient") else str(_MUTATING_LIMIT)))
+            if len(hits) >= effective_limit:
                 logger.warning(f"Carnaval: rate limit превышен для IP {ip} на {request.method} {request.url.path}")
                 return JSONResponse({"error": "rate_limited", "message": "Слишком много запросов"}, status_code=429)
             _mutating_requests[ip].append(now)

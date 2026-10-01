@@ -103,19 +103,21 @@ def test_require_user_revocation(mock_cardinal_p7):
 
 
 # ─────────────────────────────────────────────────────────────
-# 2. Удаление POST /more/authorized-users (Section 5.3)
+# 2. Добавление через POST /more/authorized-users
 # ─────────────────────────────────────────────────────────────
 
-def test_post_authorized_users_endpoint_removed(mock_cardinal_p7):
-    """POST /api/more/authorized-users отсутствует (405 Method Not Allowed)."""
+def test_post_authorized_users_endpoint(mock_cardinal_p7):
+    """POST /api/more/authorized-users успешно добавляет пользователя."""
     app = build_app(allowed_origins=["*"])
     client = TestClient(app)
 
     token = auth.create_token(12345)
     headers = {"Authorization": f"Bearer {token}"}
 
-    res = client.post("/api/more/authorized-users", json={"user_id": 99999}, headers=headers)
-    assert res.status_code in (404, 405)
+    res = client.post("/api/more/authorized-users", json={"user_id": 99999, "role": "admin", "comment": "Support"}, headers=headers)
+    assert res.status_code == 200
+    assert res.json().get("ok") is True
+    assert 99999 in mock_cardinal_p7.telegram.authorized_users
 
 
 # ─────────────────────────────────────────────────────────────

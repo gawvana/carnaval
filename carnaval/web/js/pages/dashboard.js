@@ -87,6 +87,10 @@ function buildDashboardHTML(d) {
   const usdTotal = bal.total_usd != null ? `${formatCurrency(bal.total_usd)} $` : '0 $';
   const eurTotal = bal.total_eur != null ? `${formatCurrency(bal.total_eur)} €` : '0 €';
 
+  const statusBadge = d.running
+    ? `<span style="display:inline-flex; align-items:center; gap:4px; color:var(--ok, #34c759); font-weight:600"><svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor" aria-hidden="true" style="width:8px; height:8px"><circle cx="4" cy="4" r="4"/></svg> онлайн</span>`
+    : `<span style="display:inline-flex; align-items:center; gap:4px; color:var(--err, #ff3b30); font-weight:600"><svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor" aria-hidden="true" style="width:8px; height:8px"><circle cx="4" cy="4" r="4"/></svg> офлайн</span>`;
+
   return `
     <!-- Профиль и Баланс (Tonal Card Primary) -->
     <div class="card p rv in" style="height: auto; min-height: 140px; margin-bottom: 12px">
@@ -97,7 +101,7 @@ function buildDashboardHTML(d) {
           </div>
           <div>
             <b style="font-size:17px; display:block">${escapeHtml(acc.username || 'Аккаунт не привязан')}</b>
-            <span style="font-size:12px; opacity:.8">ID: ${escapeHtml(acc.id || '—')} · ${d.running ? '🟢 онлайн' : '🔴 офлайн'}</span>
+            <span style="font-size:12px; opacity:.8; display:inline-flex; align-items:center; gap:6px">ID: ${escapeHtml(acc.id || '—')} · ${statusBadge}</span>
           </div>
         </div>
         ${acc.id ? `

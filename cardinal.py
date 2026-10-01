@@ -1016,6 +1016,57 @@ class Cardinal(object):
             self.pinned_plugins.append(uuid)
         cardinal_tools.cache_pinned_plugins(self.pinned_plugins)
 
+    def reload_plugin(self, uuid: str) -> tuple[bool, str]:
+        """
+        Перезагружает отдельный плагин по его UUID.
+        """
+        if uuid not in self.plugins:
+            return False, f"Плагин {uuid} не найден"
+        pl = self.plugins[uuid]
+        path = getattr(pl, "path", None)
+        if not path or not os.path.exists(path):
+            return False, f"Файл плагина не найден: {path}"
+        filename = os.path.basename(path)
+        try:
+            plugin_module, data = self.load_plugin(filename)
+        except Exception as e:
+            return False, f"Ошибка загрузки плагина: {e}"
+
+        # Удаляем зарегистрированные хэндлеры для этого плагина
+        if hasattr(self, "handler_bind_var_names"):
+            for h_list in self.handler_bind_var_names.values():
+                h_list[:] = [fn for fn in h_list if getattr(fn, "plugin_uuid", None) != uuid]
+
+        pl.name = data.get("NAME", pl.name)
+        pl.version = data.get("VERSION", pl.version)
+        pl.description = data.get("DESCRIPTION", pl.description)
+        pl.credits = data.get("CREDITS", pl.credits)
+        pl.settings_page = data.get("SETTINGS_PAGE", pl.settings_page)
+        pl.delete_handler = data.get("BIND_TO_DELETE", pl.delete_handler)
+        pl.plugin = plugin_module
+        if hasattr(pl, "commands") and isinstance(pl.commands, dict):
+            pl.commands.clear()
+
+        try:
+            self.add_handlers_from_plugin(plugin_module, uuid)
+        except Exception as e:
+            logger.error(_("crd_plugin_handlers_err", pl.name))
+            pl.enabled = False
+            return False, f"Ошибка регистрации хэндлеров: {e}"
+        return True, ""
+
+    def reload_all_plugins(self) -> tuple[bool, str]:
+        """
+        Перезагружает все плагины в Cardinal.
+        """
+        if hasattr(self, "handler_bind_var_names"):
+            for h_list in self.handler_bind_var_names.values():
+                h_list[:] = [fn for fn in h_list if getattr(fn, "plugin_uuid", None) is None]
+        self.plugins.clear()
+        self.load_plugins()
+        self.add_handlers()
+        return True, ""
+
     # Настройки
     @property
     def autoraise_enabled(self) -> bool:

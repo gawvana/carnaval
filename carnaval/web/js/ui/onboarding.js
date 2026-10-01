@@ -7,6 +7,7 @@ import { tg, haptic } from '../tg.js';
 import { openSheet, closeSheet } from './sheet.js';
 import { showToast } from './toast.js';
 import { escapeHtml } from './sanitize.js';
+import { getIcon } from './icons.js';
 
 /**
  * Рендерит пошаговый мастер первичной настройки системы (7 шагов, Section 10 & 56).
@@ -317,13 +318,18 @@ export async function renderOnboarding(container, onComplete) {
           const s = await api.getSetupStatus();
           const checkEl = body.querySelector('#check-list');
           if (checkEl) {
+            const okIcon = `<span style="color:var(--ok); display:inline-flex; align-items:center">${getIcon('check', 'icon-xs')}</span>`;
+            const closeIcon = `<span style="color:var(--err); display:inline-flex; align-items:center">${getIcon('close', 'icon-xs')}</span>`;
+            const alertIcon = `<span style="color:var(--muted); display:inline-flex; align-items:center">${getIcon('alert', 'icon-xs')}</span>`;
+            const keyIcon = `<span style="color:var(--primary); display:inline-flex; align-items:center">${getIcon('key', 'icon-xs')}</span>`;
+
             checkEl.innerHTML = `
-              <div>${s.has_owner ? '✅' : '❌'} Владелец: ${s.has_owner ? 'Зарегистрирован' : 'Не найден'}</div>
-              <div>${s.has_password ? '✅' : '❌'} Мастер-пароль (Argon2id): ${s.has_password ? 'Активен' : 'Не задан'}</div>
-              <div>${s.has_golden_key ? '✅' : '⚪'} Golden Key: ${s.has_golden_key ? 'Зашифрован' : 'Пропущен'}</div>
-              <div>${s.has_funpay ? '✅' : '⚪'} FunPay аккаунт: ${s.has_funpay ? 'Настроен' : 'Пропущен'}</div>
-              <div>${s.has_proxy ? '✅' : '⚪'} Прокси: ${s.has_proxy ? 'Настроен' : 'Прямое подключение'}</div>
-              <div>🔒 Хранилище: AES-256-GCM в защищённом томе</div>
+              <div style="display:flex; align-items:center; gap:8px">${s.has_owner ? okIcon : closeIcon} <span>Владелец: ${s.has_owner ? 'Зарегистрирован' : 'Не найден'}</span></div>
+              <div style="display:flex; align-items:center; gap:8px">${s.has_password ? okIcon : closeIcon} <span>Мастер-пароль (Argon2id): ${s.has_password ? 'Активен' : 'Не задан'}</span></div>
+              <div style="display:flex; align-items:center; gap:8px">${s.has_golden_key ? okIcon : alertIcon} <span>Golden Key: ${s.has_golden_key ? 'Зашифрован' : 'Пропущен'}</span></div>
+              <div style="display:flex; align-items:center; gap:8px">${s.has_funpay ? okIcon : alertIcon} <span>FunPay аккаунт: ${s.has_funpay ? 'Настроен' : 'Пропущен'}</span></div>
+              <div style="display:flex; align-items:center; gap:8px">${s.has_proxy ? okIcon : alertIcon} <span>Прокси: ${s.has_proxy ? 'Настроен' : 'Прямое подключение'}</span></div>
+              <div style="display:flex; align-items:center; gap:8px">${keyIcon} <span>Хранилище: AES-256-GCM в защищённом томе</span></div>
             `;
           }
         } catch {}
@@ -374,7 +380,7 @@ export function openPanelUnlockModal(onUnlocked) {
   _isUnlockSheetOpen = true;
 
   openSheet({
-    title: '🔒 Разблокировка панели',
+    title: `${getIcon('security', 'icon-sm')} Разблокировка панели`,
     content: `
       <p class="tx" style="font-size: 13px; opacity: .7; margin-bottom: 14px">
         Для выполнения этой операции введите мастер-пароль панели управления:

@@ -540,6 +540,16 @@ export async function removeAuthorizedUser(user_id, confirm = true) {
   return await request('DELETE', `/api/more/authorized-users/${encodeURIComponent(user_id)}?confirm=${Boolean(confirm)}`);
 }
 
+export async function addAuthorizedUser(userId, role = '', comment = '') {
+  return await request('POST', '/api/more/authorized-users', {
+    json: {
+      user_id: Number(userId),
+      role: role || undefined,
+      comment: comment || undefined,
+    },
+  });
+}
+
 export async function getAccountInfo() {
   return await request('GET', '/api/more/account');
 }

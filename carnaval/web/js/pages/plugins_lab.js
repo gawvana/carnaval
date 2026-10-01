@@ -45,11 +45,18 @@ async function loadPlugins() {
     const plugins = data?.plugins || [];
     renderPluginsList(contentEl, plugins);
   } catch (e) {
-    const fallbackPlugins = [
-      { uuid: 'p1', name: 'AutoDeliver Plus', version: '1.2.0', author: 'Carnaval Team', desc: 'Улучшенная выдача ключей и файлов', enabled: true, pinned: true, commands: ['/deliver_test'] },
-      { uuid: 'p2', name: 'Review Bot', version: '1.0.4', author: 'Community', desc: 'Автоматические благодарности за отзывы', enabled: true, pinned: false, commands: ['/reviews_sync'] },
-    ];
-    renderPluginsList(contentEl, fallbackPlugins);
+    contentEl.innerHTML = `
+      <div class="liquid-glass" style="padding: 32px; text-align: center; border-radius: var(--r2); color: var(--danger, #ff453a);">
+        <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">Не удалось загрузить список плагинов</div>
+        <button id="retry-plugins-btn" class="btn btn-sm btn-ghost spring-tap" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: var(--r1); font-size: 13px; cursor: pointer; color: var(--on);">
+          ${getIcon('refresh', 'icon-xs')} Повторить попытку
+        </button>
+      </div>
+    `;
+    contentEl.querySelector('#retry-plugins-btn')?.addEventListener('click', () => {
+      contentEl.innerHTML = '<div class="shimmer" style="height: 140px; border-radius: var(--r2);"></div>';
+      loadPlugins();
+    });
   }
 }
 

@@ -108,7 +108,13 @@ export function openSheet(titleOrOptions, maybeContentHTML = '', onClose = null)
     contentHTML += `<div class="btns" style="display:flex;gap:10px;margin-top:20px">${actBtns}</div>`;
   }
 
-  if (_titleEl) _titleEl.textContent = title;
+  if (_titleEl) {
+    if (typeof title === 'string' && title.includes('<')) {
+      _titleEl.innerHTML = title;
+    } else {
+      _titleEl.textContent = title;
+    }
+  }
   if (_contentEl) {
     _contentEl.innerHTML = contentHTML;
     if (actions && Array.isArray(actions)) {

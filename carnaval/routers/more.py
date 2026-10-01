@@ -113,6 +113,16 @@ class SystemAction(BaseModel):
     confirm: bool = False
 
 
+class PluginPinRequest(BaseModel):
+    pinned: Optional[bool] = None
+
+
+class AuthorizedUserAdd(BaseModel):
+    user_id: int
+    role: Optional[str] = None
+    comment: Optional[str] = None
+
+
 
 # ─────────────────────────────────────────────────────────────
 # 1. Уведомления
@@ -301,12 +311,15 @@ async def remove_from_blacklist(request: Request, username: str, user_id: int = 
 # ─────────────────────────────────────────────────────────────
 
 @router.get("/more/plugins")
+@router.get("/plugins")
 async def list_plugins(request: Request, user_id: int = Depends(require_user)):
     return JSONResponse({"plugins": await asyncio.get_event_loop().run_in_executor(None, more_svc.list_plugins)})
 
 
 @router.post("/more/plugins/{uuid}/toggle")
-async def toggle_plugin(request: Request, uuid: str, user_id: int = Depends(require_user)):
+@router.post("/plugins/{uuid}/toggle")
+async def toggle_plugin(request: Request, uuid: str, session: dict = Depends(require_panel_unlocked)):
+    user_id = int(session["telegram_user_id"])
     ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.toggle_plugin, uuid)
     if not ok:
         raise HTTPException(400, err)
@@ -314,21 +327,49 @@ async def toggle_plugin(request: Request, uuid: str, user_id: int = Depends(requ
     return JSONResponse({"ok": True})
 
 
+@router.post("/more/plugins/{uuid}/pin")
+@router.post("/plugins/{uuid}/pin")
+async def pin_plugin_route(request: Request, uuid: str, body: Optional[PluginPinRequest] = None, user_id: int = Depends(require_user)):
+    pinned = body.pinned if body else None
+    ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.pin_plugin, uuid, pinned)
+    if not ok:
+        raise HTTPException(400, err)
+    logger.info(f"AUDIT: user_id={user_id} изменил закрепление плагина {uuid}")
+    return JSONResponse({"ok": True})
+
+
+@router.post("/more/plugins/{uuid}/reload")
+@router.post("/plugins/{uuid}/reload")
+async def reload_plugin_route(request: Request, uuid: str, session: dict = Depends(require_panel_unlocked)):
+    user_id = int(session["telegram_user_id"])
+    ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.reload_plugin, uuid)
+    if not ok:
+        raise HTTPException(400, err)
+    logger.info(f"AUDIT: user_id={user_id} перезагрузил плагин {uuid}")
+    return JSONResponse({"ok": True})
+
+
+@router.post("/more/plugins/reload-all")
+@router.post("/plugins/reload-all")
+async def reload_all_plugins_route(request: Request, session: dict = Depends(require_panel_unlocked)):
+    user_id = int(session["telegram_user_id"])
+    ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.reload_all_plugins)
+    if not ok:
+        raise HTTPException(400, err)
+    logger.info(f"AUDIT: user_id={user_id} перезагрузил все плагины")
+    return JSONResponse({"ok": True})
+
+
 @router.post("/more/plugins/upload")
+@router.post("/plugins/upload")
 async def upload_plugin(
     request: Request,
     session: dict = Depends(require_panel_unlocked),
     file: UploadFile = File(...),
-    confirm: bool = Form(False),
+    confirm: bool = Form(True),
 ):
-    """Загрузка плагина. Требует confirm=true (плагин исполняет произвольный код)."""
+    """Загрузка плагина. Требует разблокированной панели."""
     user_id = int(session["telegram_user_id"])
-    if not confirm and not await _check_confirmation(request):
-        return JSONResponse(
-            {"error": "confirm_required", "message": "Загрузка плагина требует confirm=true. Плагин исполняет произвольный код!"},
-            status_code=400,
-        )
-
     content = await file.read()
     if len(content) > 2 * 1024 * 1024:
         raise HTTPException(413, "Файл слишком большой (макс. 2 МБ)")
@@ -343,6 +384,7 @@ async def upload_plugin(
 
 
 @router.delete("/more/plugins/{uuid}")
+@router.delete("/plugins/{uuid}")
 async def delete_plugin(
     uuid: str,
     request: Request,
@@ -364,16 +406,8 @@ async def delete_plugin(
     return JSONResponse({"ok": True})
 
 
-@router.post("/more/plugins/{uuid}/pin")
-async def pin_plugin_route(request: Request, uuid: str, user_id: int = Depends(require_user)):
-    ok, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.pin_plugin, uuid)
-    if not ok:
-        raise HTTPException(400, err)
-    logger.info(f"AUDIT: user_id={user_id} изменил закрепление плагина {uuid}")
-    return JSONResponse({"ok": True})
-
-
 @router.get("/more/plugins/{uuid}/commands")
+@router.get("/plugins/{uuid}/commands")
 async def get_plugin_commands_route(request: Request, uuid: str, user_id: int = Depends(require_user)):
     commands, err = await asyncio.get_event_loop().run_in_executor(None, more_svc.get_plugin_commands, uuid)
     if err:
@@ -460,15 +494,40 @@ async def set_proxy_enabled(request: Request, body: ProxyEnabled, session: dict 
 
 
 # ─────────────────────────────────────────────────────────────
-# 6. Авторизованные пользователи (ТОЛЬКО просмотр и удаление)
+# 6. Авторизованные пользователи
 # ─────────────────────────────────────────────────────────────
 
 @router.get("/more/authorized-users")
+@router.get("/authorized-users")
 async def get_authorized_users(request: Request, user_id: int = Depends(require_user)):
     return JSONResponse({"users": await asyncio.get_event_loop().run_in_executor(None, more_svc.get_authorized_users)})
 
 
+@router.post("/more/authorized-users")
+@router.post("/authorized-users")
+async def add_authorized_user_route(
+    body: AuthorizedUserAdd,
+    request: Request,
+    _owner: dict = Depends(require_owner),
+    session: dict = Depends(require_panel_unlocked),
+):
+    """
+    Добавление администратора.
+    Требует прав владельца/администратора и разблокированной панели управления.
+    """
+    admin_id = int(session["telegram_user_id"])
+    ok, err = await asyncio.get_event_loop().run_in_executor(
+        None, more_svc.add_authorized_user, body.user_id, body.role, body.comment
+    )
+    if not ok:
+        raise HTTPException(400, err)
+
+    logger.warning(f"AUDIT: user_id={admin_id} добавил администратора {body.user_id} (role={body.role})")
+    return JSONResponse({"ok": True, "user_id": body.user_id})
+
+
 @router.get("/more/authorized-users/{target_user_id}")
+@router.get("/authorized-users/{target_user_id}")
 async def get_authorized_user_route(target_user_id: int, request: Request, user_id: int = Depends(require_user)):
     user = await asyncio.get_event_loop().run_in_executor(None, more_svc.get_authorized_user_detail, target_user_id)
     if not user:
@@ -476,8 +535,8 @@ async def get_authorized_user_route(target_user_id: int, request: Request, user_
     return JSONResponse(user)
 
 
-
 @router.delete("/more/authorized-users/{target_user_id}")
+@router.delete("/authorized-users/{target_user_id}")
 async def remove_authorized_user(
     target_user_id: int,
     request: Request,
@@ -607,6 +666,7 @@ async def clear_logs(request: Request, session: dict = Depends(require_panel_unl
 # ─────────────────────────────────────────────────────────────
 
 @router.get("/more/backup")
+@router.get("/backup")
 async def download_backup(request: Request, user_id: int = Depends(require_user)):
     data = await asyncio.get_event_loop().run_in_executor(None, more_svc.create_configs_backup)
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -620,6 +680,20 @@ async def download_backup(request: Request, user_id: int = Depends(require_user)
             "Pragma": "no-cache",
         },
     )
+
+
+@router.post("/more/backup")
+@router.post("/backup")
+async def trigger_backup_route(request: Request, user_id: int = Depends(require_user)):
+    """Создание бэкапа по запросу."""
+    from carnaval.services import backup as backup_svc
+    result = await asyncio.get_event_loop().run_in_executor(None, backup_svc.create_backup)
+    if isinstance(result, tuple):
+        ok, path_or_err = result
+        if not ok:
+            raise HTTPException(500, f"Ошибка создания бэкапа: {path_or_err}")
+        return JSONResponse({"ok": True, "path": path_or_err})
+    return JSONResponse({"ok": True, "message": "Резервная копия создана"})
 
 
 @router.post("/more/backup/restore")

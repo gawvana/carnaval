@@ -265,7 +265,7 @@ async function openOrderDetailsModal(orderId) {
       ${o.review ? `
         <h4 style="font-size:13px; color:var(--muted); margin:12px 4px 6px">Отзыв покупателя</h4>
         <div class="panel" style="padding:14px; margin-bottom:14px">
-          <div>${'⭐'.repeat(Math.min(5, Math.max(1, o.review.stars || 5)))}</div>
+          <div style="display:flex; gap:3px; color:var(--warn, #f5a623); align-items:center">${Array.from({ length: Math.min(5, Math.max(1, o.review.stars || 5)) }).map(() => '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" stroke="currentColor" stroke-width="1" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>').join('')}</div>
           <div style="font-size:13px; margin:4px 0">${escapeHtml(o.review.text || 'Без текста')}</div>
           ${o.review.reply ? `
             <div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--track); font-size:12px">
