@@ -170,20 +170,17 @@ function renderChatCardHTML(c) {
   const safeName = escapeHtml(c.name);
   const safeMsg = escapeHtml(c.last_message_text || 'Нет сообщений');
   return `
-    <button class="card n press chat-card-btn rv in" data-id="${safeId}" data-name="${safeName}" style="height:auto; min-height:76px; padding:14px; text-align:left; width:100%; display:flex; align-items:center; gap:12px">
-      <div style="width:44px; height:44px; border-radius:50%; background:var(--p); color:var(--on-p); display:grid; place-items:center; font-weight:800; font-size:16px; flex:none; position:relative">
+    <button class="chat-card press chat-card-btn rv in" data-id="${safeId}" data-name="${safeName}">
+      <div class="chat-card-avatar">
         ${initials}
-        ${c.unread ? `<i style="position:absolute; top:0; right:0; width:12px; height:12px; border-radius:50%; background:var(--err); border:2px solid var(--n)"></i>` : ''}
+        ${c.unread ? `<i class="chat-card-badge"></i>` : ''}
       </div>
-
-      <div style="flex:1; min-width:0">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px">
-          <b style="font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${safeName}</b>
-          ${c.unread ? `<span style="font-size:11px; font-weight:700; color:var(--err); background:var(--err-c); padding:2px 6px; border-radius:6px">Новое</span>` : ''}
+      <div class="chat-card-body">
+        <div class="chat-card-top">
+          <b class="chat-card-name">${safeName}</b>
+          ${c.unread ? `<span class="chat-card-new">Новое</span>` : ''}
         </div>
-        <div style="font-size:13px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap">
-          ${safeMsg}
-        </div>
+        <div class="chat-card-msg">${safeMsg}</div>
       </div>
     </button>
   `;

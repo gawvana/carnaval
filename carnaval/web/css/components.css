@@ -313,6 +313,97 @@ body.open .sheet {
   border-radius: 14px;
 }
 
+/* ── Карточка чата (Chat List Item) ── */
+.chat-card {
+  width: 100%;
+  min-height: 76px;
+  height: auto;
+  padding: 14px 14px;
+  border-radius: 20px;
+  background: var(--n);
+  color: var(--on-n);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  border: none;
+  cursor: pointer;
+  outline: none;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .55s var(--spring), background-color .25s;
+}
+
+.chat-card-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--p);
+  color: var(--on-p);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 17px;
+  flex: none;
+  position: relative;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--p) 30%, transparent);
+}
+
+.chat-card-badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--err);
+  border: 2px solid var(--n);
+  display: block;
+}
+
+.chat-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 3px;
+  gap: 8px;
+}
+
+.chat-card-name {
+  font-size: 15px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.chat-card-new {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--err);
+  background: color-mix(in srgb, var(--err) 15%, transparent);
+  padding: 2px 8px;
+  border-radius: 8px;
+  flex: none;
+  white-space: nowrap;
+}
+
+.chat-card-msg {
+  font-size: 13px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Карточки (Tonal Cards) ── */
 .cards {
   display: grid;
